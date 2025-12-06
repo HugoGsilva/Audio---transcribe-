@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Audio Transcription Service</title>
+    <title>Serviço de Transcrição de Áudio</title>
     <link rel="stylesheet" href="/static/style.css">
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -15,8 +15,8 @@
 <body>
     <div class="container">
         <header>
-            <h1>Audio Transcription</h1>
-            <div class="subtitle">Convert audio to text privately using local Whisper model</div>
+            <h1>Transcrição de Áudio</h1>
+            <div class="subtitle">Converta áudio em texto localmente com o modelo Whisper</div>
         </header>
 
         <div id="error-message" class="error-message"></div>
@@ -29,8 +29,8 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                         d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
-                <div class="upload-text">Click or drag file to this area to upload</div>
-                <div class="upload-subtext">Support for MP3, WAV, M4A, OGG, WEBM, FLAC, OPUS, PTT (Max 100MB)</div>
+                <div class="upload-text">Clique ou arraste o arquivo para esta área para enviar</div>
+                <div class="upload-subtext">Suporta MP3, WAV, M4A, OGG, WEBM, FLAC, OPUS, PTT (Máx 100MB)</div>
                 <input type="file" id="file-input" accept=".mp3,.wav,.m4a,.ogg,.webm,.flac,.opus,.ptt">
             </div>
         </div>
@@ -40,7 +40,7 @@
             <div class="status-card">
                 <div class="status-info">
                     <div class="spinner"></div>
-                    <span id="status-text" class="status-text">Processing...</span>
+                    <span id="status-text" class="status-text">Processando...</span>
                 </div>
             </div>
         </div>
@@ -48,16 +48,16 @@
         <!-- Result Section -->
         <div id="result-section" class="result-section">
             <div class="result-header">
-                <h2 style="font-size: 1.25rem; font-weight: 600; margin: 0;">Transcription Result</h2>
+                <h2 style="font-size: 1.25rem; font-weight: 600; margin: 0;">Resultado da Transcrição</h2>
                 <div id="result-meta" class="result-meta"></div>
             </div>
 
             <textarea id="result-text" class="result-box" readonly></textarea>
 
             <div class="btn-group">
-                <button id="btn-download" class="btn btn-primary">Download .txt</button>
-                <button id="btn-copy" class="btn btn-secondary">Copy Text</button>
-                <button id="btn-new" class="btn btn-secondary">New Transcription</button>
+                <button id="btn-download" class="btn btn-primary">Baixar .txt</button>
+                <button id="btn-copy" class="btn btn-secondary">Copiar texto</button>
+                <button id="btn-new" class="btn btn-secondary">Nova transcrição</button>
             </div>
         </div>
     </div>

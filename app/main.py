@@ -14,6 +14,7 @@ from .validation import FileValidator
 from .whisper_service import WhisperService
 
 from .config import settings, logger
+from time import perf_counter
 
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
@@ -85,16 +86,19 @@ def process_transcription(task_id: str, file_path: str):
         task_store.update_status(task_id, "processing")
         
         # Transcribe
+        start_ts = perf_counter()
         result = whisper_service.transcribe(file_path)
-        
-        # Save result
+        processing_time = perf_counter() - start_ts
+
+        # Save result including processing time
         task_store.save_result(
             task_id, 
             text=result["text"], 
             language=result["language"], 
-            duration=result["duration"]
+            duration=result["duration"],
+            processing_time=processing_time
         )
-        logger.info(f"Task {task_id} completed successfully. Language: {result['language']}, Duration: {result['duration']}s")
+        logger.info(f"Task {task_id} completed successfully. Language: {result['language']}, Duration: {result['duration']}s, Processing time: {processing_time:.2f}s")
         
     except Exception as e:
         logger.error(f"Task {task_id} failed: {e}")
@@ -194,6 +198,7 @@ async def get_result(task_id: str, db: Session = Depends(get_db)):
         "text": task.result_text,
         "language": task.language,
         "duration": task.duration,
+        "processing_time": task.processing_time,
         "filename": task.filename,
         "completed_at": task.completed_at
     }

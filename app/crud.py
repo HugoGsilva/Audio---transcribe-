@@ -34,12 +34,13 @@ class TaskStore:
             self.db.refresh(task)
         return task
 
-    def save_result(self, task_id: str, text: str, language: str, duration: float) -> Optional[TranscriptionTask]:
+    def save_result(self, task_id: str, text: str, language: str, duration: float, processing_time: float = None) -> Optional[TranscriptionTask]:
         task = self.get_task(task_id)
         if task:
             task.result_text = text
             task.language = language
             task.duration = duration
+            task.processing_time = processing_time
             task.status = "completed"
             task.completed_at = datetime.utcnow()
             self.db.commit()

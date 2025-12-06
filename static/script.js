@@ -60,7 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
         errorMessage.style.display = 'none';
         uploadSection.style.display = 'none';
         statusSection.style.display = 'block';
-        statusText.textContent = 'Uploading...';
+        statusText.textContent = 'Enviando...';
 
         const formData = new FormData();
         formData.append('file', file);
@@ -86,7 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function pollStatus(taskId) {
-        statusText.textContent = 'Processing... This may take a moment.';
+        statusText.textContent = 'Processando... Isso pode levar alguns instantes.';
 
         const intervalId = setInterval(async () => {
             try {
@@ -121,7 +121,16 @@ document.addEventListener('DOMContentLoaded', () => {
             resultSection.style.display = 'block';
 
             resultText.value = data.text;
-            resultMeta.textContent = `Language: ${data.language} | Duration: ${data.duration.toFixed(2)}s`;
+            // Show language, original duration and processing time if present
+            const processingInfo = [];
+            processingInfo.push(`Idioma: ${data.language}`);
+            if (data.duration !== undefined && data.duration !== null) {
+                processingInfo.push(`Duração: ${data.duration.toFixed(2)}s`);
+            }
+            if (data.processing_time !== undefined && data.processing_time !== null) {
+                processingInfo.push(`Tempo de processamento: ${data.processing_time.toFixed(2)}s`);
+            }
+            resultMeta.textContent = processingInfo.join(' | ');
 
             // Setup download button
             btnDownload.onclick = () => {
@@ -152,9 +161,9 @@ document.addEventListener('DOMContentLoaded', () => {
     btnCopy.addEventListener('click', () => {
         resultText.select();
         document.execCommand('copy');
-        // Optional: Show tooltip or toast
+        // Mostrar confirmação breve
         const originalText = btnCopy.textContent;
-        btnCopy.textContent = 'Copied!';
+        btnCopy.textContent = 'Copiado!';
         setTimeout(() => btnCopy.textContent = originalText, 2000);
     });
 });
