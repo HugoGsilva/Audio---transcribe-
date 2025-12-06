@@ -43,6 +43,24 @@ body {
 .panel { background: var(--card); border-radius: 10px; padding: 18px; box-shadow: 0 6px 18px rgba(12,18,31,0.04); }
 .panel h2 { margin: 0 0 10px 0; font-size: 1.1rem; }
 
+/* Increase spacing and make controls more airy */
+.panel { padding: 26px; }
+.left-column { gap: 26px; }
+.upload-area { padding: 28px; }
+.history-list { gap: 14px; }
+.history-item { padding: 16px; }
+.history-item-filename { font-size: 1rem; }
+
+/* In-progress item spacing */
+.inprogress-list { display:flex; flex-direction:column; gap:12px; margin-top:12px; }
+.inprogress-item { background:#fff; border:1px solid var(--border); padding:10px; border-radius:8px; }
+.inprogress-item .progress-bar { height:8px; background:#eef2ff; border-radius:6px; overflow:hidden; }
+.inprogress-item .progress-fill { height:8px; background:linear-gradient(90deg,var(--primary),#60a5fa); width:0%; }
+
+/* Clear confirm area spacing */
+#clear-confirm { gap:8px; display:none; }
+
+
 /* Upload area */
 .upload-area { border: 2px dashed var(--border); border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; }
 .upload-area.dragover { background: #f1f5f9; border-color: var(--primary); }

@@ -36,8 +36,8 @@
                                 d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                         </svg>
                         <div class="upload-text">Clique ou arraste o arquivo para esta área para enviar</div>
-                        <div class="upload-subtext">Suporta MP3, WAV, M4A, OGG, WEBM, FLAC, OPUS, PTT (Máx 100MB)</div>
-                        <input type="file" id="file-input" accept=".mp3,.wav,.m4a,.ogg,.webm,.flac,.opus,.ptt">
+                        <div class="upload-subtext">Suporta MP3, WAV, M4A, OGG, WEBM, FLAC, OPUS, PTT (Máx 100MB) — selecione vários arquivos</div>
+                        <input type="file" id="file-input" accept=".mp3,.wav,.m4a,.ogg,.webm,.flac,.opus,.ptt" multiple>
                     </div>
                 </div>
 
@@ -47,7 +47,7 @@
                             <div class="spinner"></div>
                             <span id="status-text" class="status-text">Processando...</span>
                         </div>
-                        <div class="progress-container">
+                        <div class="progress-container main-progress" style="display:none">
                             <div class="progress-bar">
                                 <div class="progress-fill" id="progress-fill"></div>
                             </div>
@@ -55,13 +55,26 @@
                                 <span id="progress-label">Preparando...</span>
                             </div>
                         </div>
+
+                        <!-- Lista de uploads em progresso (suporta vários) -->
+                        <div id="inprogress-list" class="inprogress-list"></div>
                     </div>
                 </div>
             </div>
 
             <!-- Right Column: History -->
             <div class="panel history-panel">
-                <h2>Histórico de Transcrições</h2>
+                <div class="history-header" style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+                    <h2 style="margin:0">Histórico de Transcrições</h2>
+                    <div style="display:flex;align-items:center;gap:8px">
+                        <button id="btn-clear-history" class="btn btn-secondary">Limpar Histórico</button>
+                        <div id="clear-confirm" style="display:none;align-items:center;gap:8px">
+                            <span style="color:var(--muted);font-size:0.95rem">Confirmar limpeza?</span>
+                            <button id="btn-confirm-clear" class="btn btn-primary">Confirmar</button>
+                            <button id="btn-cancel-clear" class="btn btn-secondary">Cancelar</button>
+                        </div>
+                    </div>
+                </div>
                 <div id="history-list" class="history-list"></div>
             </div>
         </div>

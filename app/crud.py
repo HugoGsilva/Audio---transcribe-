@@ -47,6 +47,23 @@ class TaskStore:
             self.db.refresh(task)
         return task
 
+    def rename_task(self, task_id: str, new_filename: str) -> Optional[TranscriptionTask]:
+        task = self.get_task(task_id)
+        if task:
+            task.filename = new_filename
+            self.db.commit()
+            self.db.refresh(task)
+        return task
+
+    def clear_history(self) -> int:
+        """Delete all completed tasks from the database and return count deleted."""
+        q = self.db.query(TranscriptionTask).filter(TranscriptionTask.status == "completed")
+        count = q.count()
+        if count > 0:
+            q.delete(synchronize_session=False)
+            self.db.commit()
+        return count
+
     def delete_old_tasks(self, hours: int):
         # Implementation for cleanup (to be used later)
         # We can implement this when we do the cleanup task

@@ -39,12 +39,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     uploadArea.addEventListener('drop', (e) => {
         const files = e.dataTransfer.files;
-        if (files.length) uploadFile(files[0]);
+        if (files.length) {
+            Array.from(files).forEach(file => uploadFile(file));
+        }
     }, false);
 
     uploadArea.addEventListener('click', () => fileInput.click());
     fileInput.addEventListener('change', (e) => {
-        if (e.target.files.length) uploadFile(e.target.files[0]);
+        if (e.target.files.length) {
+            Array.from(e.target.files).forEach(file => uploadFile(file));
+        }
     });
 
     // Upload Function
@@ -52,8 +56,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         errorMessage.style.display = 'none';
         statusSection.style.display = 'block';
         statusText.textContent = 'Enviando...';
-        progressFill.style.width = '0%';
-        progressLabel.textContent = 'Preparando...';
+
+        // Create progress item for this file
+        const item = createInprogressItem(file.name);
 
         const formData = new FormData();
         formData.append('file', file);
@@ -70,17 +75,45 @@ document.addEventListener('DOMContentLoaded', async () => {
                 throw new Error(data.detail || 'Envio falhou');
             }
 
-            pollStatus(data.task_id);
+            // Start polling for this task and update its UI item
+            pollStatus(data.task_id, item);
 
         } catch (error) {
+            item.querySelector('.inprogress-status').textContent = 'Falha';
+            item.querySelector('.inprogress-status').style.color = '#ef4444';
             showError(error.message);
         }
     }
 
+    function createInprogressItem(filename) {
+        const list = document.getElementById('inprogress-list');
+        const wrapper = document.createElement('div');
+        wrapper.className = 'inprogress-item';
+        wrapper.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+                <div style="font-weight:600">${escapeHtml(filename)}</div>
+                <div class="inprogress-status" style="color:#64748b">Enviando...</div>
+            </div>
+            <div class="progress-bar" style="margin-top:8px"><div class="progress-fill" style="width:0%"></div></div>
+        `;
+        list.prepend(wrapper);
+        return wrapper;
+    }
+
+    function escapeHtml(text) {
+        return text.replace(/[&<>"']/g, function (m) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"})[m]; });
+    }
+
     // Poll Status
-    function pollStatus(taskId) {
-        statusText.textContent = 'Processando áudio...';
-        updateProgress(0, 'Preparando...');
+    function pollStatus(taskId, uiItem = null) {
+        // If uiItem provided, update that item's progress; otherwise use main progress UI
+        if (!uiItem) {
+            statusText.textContent = 'Processando áudio...';
+            document.querySelector('.main-progress').style.display = 'block';
+            updateProgress(0, 'Preparando...');
+        } else {
+            uiItem.querySelector('.inprogress-status').textContent = 'Processando...';
+        }
 
         const intervalId = setInterval(async () => {
             try {
@@ -89,17 +122,29 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 if (data.status === 'processing' || data.status === 'pending') {
                     const progress = data.progress || 0;
-                    updateProgress(progress, `Processando: ${progress}%`);
+                    if (uiItem) {
+                        const fill = uiItem.querySelector('.progress-fill');
+                        fill.style.width = progress + '%';
+                        uiItem.querySelector('.inprogress-status').textContent = `Processando: ${progress}%`;
+                    } else {
+                        updateProgress(progress, `Processando: ${progress}%`);
+                    }
                 } else if (data.status === 'completed') {
                     clearInterval(intervalId);
-                    updateProgress(100, 'Concluído!');
-                    setTimeout(() => {
-                        statusSection.style.display = 'none';
-                        loadHistory();
-                        showResult(taskId);
-                    }, 500);
+                    if (uiItem) {
+                        uiItem.querySelector('.progress-fill').style.width = '100%';
+                        uiItem.querySelector('.inprogress-status').textContent = 'Concluído';
+                        setTimeout(() => { uiItem.remove(); loadHistory(); showResult(taskId); }, 600);
+                    } else {
+                        updateProgress(100, 'Concluído!');
+                        setTimeout(() => { document.querySelector('.main-progress').style.display = 'none'; statusSection.style.display = 'none'; loadHistory(); showResult(taskId); }, 500);
+                    }
                 } else if (data.status === 'failed') {
                     clearInterval(intervalId);
+                    if (uiItem) {
+                        uiItem.querySelector('.inprogress-status').textContent = 'Falhou';
+                        uiItem.querySelector('.inprogress-status').style.color = '#ef4444';
+                    }
                     showError(data.error || 'Transcrição falhou');
                 }
             } catch (error) {
@@ -183,14 +228,98 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const date = new Date(task.completed_at).toLocaleString('pt-BR');
                 
                 item.innerHTML = `
-                    <div class="history-item-filename">${task.filename}</div>
-                    <div class="history-item-preview">${preview}${task.text.length > 100 ? '...' : ''}</div>
-                    <div class="history-item-meta">Idioma: ${task.language} | Duração: ${task.duration.toFixed(2)}s | ${date}</div>
-                `;
+                        <div style="display:flex;justify-content:space-between;align-items:center">
+                            <div class="history-filename-wrapper" style="display:flex;align-items:center;gap:8px;">
+                                <div class="history-item-filename">${escapeHtml(task.filename)}</div>
+                                <input class="history-item-input" style="display:none;padding:6px;border-radius:6px;border:1px solid var(--border);min-width:200px" value="${escapeHtml(task.filename)}" />
+                            </div>
+                            <div style="display:flex;gap:8px">
+                                <button class="btn btn-secondary btn-edit" data-task-id="${task.task_id}">Editar</button>
+                                <button class="btn btn-primary btn-save" data-task-id="${task.task_id}" style="display:none">Salvar</button>
+                                <button class="btn btn-secondary btn-cancel" data-task-id="${task.task_id}" style="display:none">Cancelar</button>
+                            </div>
+                        </div>
+                        <div class="history-item-preview">${escapeHtml(preview)}${task.text.length > 100 ? '...' : ''}</div>
+                        <div class="history-item-meta">Idioma: ${task.language} | Duração: ${task.duration.toFixed(2)}s | ${date}</div>
+                    `;
 
-                item.addEventListener('click', () => showHistoryDetail(task));
-                historyList.appendChild(item);
-            });
+                    // Open detail when clicking item except on buttons
+                    item.addEventListener('click', (e) => {
+                        if (e.target && e.target.closest && e.target.closest('.btn-edit')) return;
+                        if (e.target && e.target.closest && e.target.closest('.btn-save')) return;
+                        if (e.target && e.target.closest && e.target.closest('.btn-cancel')) return;
+                        showHistoryDetail(task);
+                    });
+
+                    historyList.appendChild(item);
+                });
+
+                // Attach inline edit handlers (edit/save/cancel)
+                document.querySelectorAll('.btn-edit').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const container = btn.closest('.history-item');
+                        const filenameEl = container.querySelector('.history-item-filename');
+                        const inputEl = container.querySelector('.history-item-input');
+                        const saveBtn = container.querySelector('.btn-save');
+                        const cancelBtn = container.querySelector('.btn-cancel');
+
+                        // Toggle UI
+                        filenameEl.style.display = 'none';
+                        inputEl.style.display = 'inline-block';
+                        btn.style.display = 'none';
+                        saveBtn.style.display = 'inline-block';
+                        cancelBtn.style.display = 'inline-block';
+                        inputEl.focus();
+                    });
+                });
+
+                document.querySelectorAll('.btn-cancel').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const container = btn.closest('.history-item');
+                        const filenameEl = container.querySelector('.history-item-filename');
+                        const inputEl = container.querySelector('.history-item-input');
+                        const editBtn = container.querySelector('.btn-edit');
+                        const saveBtn = container.querySelector('.btn-save');
+
+                        // Revert UI
+                        inputEl.value = filenameEl.textContent;
+                        inputEl.style.display = 'none';
+                        filenameEl.style.display = 'block';
+                        btn.style.display = 'none';
+                        saveBtn.style.display = 'none';
+                        editBtn.style.display = 'inline-block';
+                    });
+                });
+
+                document.querySelectorAll('.btn-save').forEach(btn => {
+                    btn.addEventListener('click', async (e) => {
+                        const container = btn.closest('.history-item');
+                        const inputEl = container.querySelector('.history-item-input');
+                        const newName = inputEl.value.trim();
+                        if (!newName) { showError('Nome não pode ficar vazio'); return; }
+                        const id = btn.getAttribute('data-task-id');
+                        try {
+                            const resp = await fetch(`/api/rename/${id}`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ new_name: newName })
+                            });
+                            if (!resp.ok) throw new Error('Falha ao renomear');
+                            // Update UI inline
+                            const filenameEl = container.querySelector('.history-item-filename');
+                            const editBtn = container.querySelector('.btn-edit');
+                            const cancelBtn = container.querySelector('.btn-cancel');
+                            filenameEl.textContent = newName;
+                            inputEl.style.display = 'none';
+                            filenameEl.style.display = 'block';
+                            btn.style.display = 'none';
+                            cancelBtn.style.display = 'none';
+                            editBtn.style.display = 'inline-block';
+                        } catch (err) {
+                            showError('Erro ao renomear: ' + err.message);
+                        }
+                    });
+                });
         } catch (error) {
             historyList.innerHTML = '<div class="empty-history" style="color: #ef4444;">Erro ao carregar histórico</div>';
         }
@@ -220,5 +349,37 @@ document.addEventListener('DOMContentLoaded', async () => {
         resultSection.style.display = 'none';
         errorMessage.textContent = message;
         errorMessage.style.display = 'block';
+    }
+
+    // Clear history inline confirmation
+    const btnClearHistory = document.getElementById('btn-clear-history');
+    const clearConfirm = document.getElementById('clear-confirm');
+    const btnConfirmClear = document.getElementById('btn-confirm-clear');
+    const btnCancelClear = document.getElementById('btn-cancel-clear');
+
+    if (btnClearHistory && clearConfirm && btnConfirmClear && btnCancelClear) {
+        btnClearHistory.addEventListener('click', () => {
+            // Toggle confirm area
+            clearConfirm.style.display = 'flex';
+            btnClearHistory.style.display = 'none';
+        });
+
+        btnCancelClear.addEventListener('click', () => {
+            clearConfirm.style.display = 'none';
+            btnClearHistory.style.display = 'inline-block';
+        });
+
+        btnConfirmClear.addEventListener('click', async () => {
+            try {
+                const resp = await fetch('/api/history/clear', { method: 'POST' });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.detail || 'Falha ao limpar histórico');
+                clearConfirm.style.display = 'none';
+                btnClearHistory.style.display = 'inline-block';
+                await loadHistory();
+            } catch (err) {
+                showError('Erro ao limpar histórico: ' + err.message);
+            }
+        });
     }
 });

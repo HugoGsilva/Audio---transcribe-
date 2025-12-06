@@ -267,6 +267,27 @@ async def get_history(db: Session = Depends(get_db)):
         for task in tasks
     ]
 
+
+@app.post("/api/rename/{task_id}")
+async def rename_task(task_id: str, payload: dict, db: Session = Depends(get_db)):
+    """Rename a transcription's filename in the DB."""
+    new_name = payload.get("new_name")
+    if not new_name:
+        raise HTTPException(status_code=400, detail="new_name is required")
+    task_store = crud.TaskStore(db)
+    task = task_store.rename_task(task_id, new_name)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return {"task_id": task.task_id, "filename": task.filename}
+
+
+@app.post("/api/history/clear")
+async def clear_history(db: Session = Depends(get_db)):
+    """Clear all completed transcription records."""
+    task_store = crud.TaskStore(db)
+    deleted = task_store.clear_history()
+    return {"deleted": deleted}
+
 # Error handling
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
