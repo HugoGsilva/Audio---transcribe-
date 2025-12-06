@@ -32,12 +32,28 @@ class WhisperService:
             self.model = WhisperModel(
                 self.model_size, 
                 device=self.device, 
-                compute_type=self.compute_type
+                compute_type=self.compute_type,
+                # Enable Flash Attention 2 if on CUDA (requires matching compute capability, usually safe on 4060)
+                flash_attention=True if self.device == "cuda" else False,
+                cpu_threads=4
             )
             logger.info("Whisper model loaded successfully.")
         except Exception as e:
             logger.error(f"Failed to load Whisper model: {e}")
             raise e
+        
+        # Initialize Batched Pipeline for GPU
+        if self.device == "cuda":
+            try:
+                from faster_whisper import BatchedInferencePipeline
+                self.batched_model = BatchedInferencePipeline(model=self.model)
+                logger.info("BatchedInferencePipeline initialized for GPU acceleration.")
+            except ImportError:
+                logger.warning("BatchedInferencePipeline not available. Using standard inference.")
+                self.batched_model = None
+            except Exception as e:
+                logger.warning(f"Failed to initialize BatchedInferencePipeline: {e}")
+                self.batched_model = None
 
     def transcribe(self, audio_file_path: str) -> dict:
         """
@@ -61,8 +77,21 @@ class WhisperService:
 
         try:
             # transcription is CPU/GPU intensive and blocking, so we run it in a thread
-            # however, faster-whisper releases GIL well, but let's be safe for asyncio integration
-            segments, info = self.model.transcribe(audio_file_path, beam_size=5)
+            
+            # Use BatchedInferencePipeline if enabled and on GPU
+            transcribe_func = self.model.transcribe
+            
+            # Check if we should use batching
+            # For simplicity, we assume if we are on CUDA we want batching if available
+            # We need to use internal method or wrapper
+            # Actually, standard model.transcribe does NOT use batching.
+            # We need to initialize BatchedInferencePipeline.
+            # See initialization below.
+            
+            if hasattr(self, 'batched_model') and self.batched_model:
+                 segments, info = self.batched_model.transcribe(audio_file_path, batch_size=16)
+            else:
+                 segments, info = self.model.transcribe(audio_file_path, beam_size=5)
             
             # segments is a generator, so we must iterate to get the text
             # This is where the actual processing happens
