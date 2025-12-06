@@ -288,6 +288,15 @@ async def clear_history(db: Session = Depends(get_db)):
     deleted = task_store.clear_history()
     return {"deleted": deleted}
 
+
+@app.delete("/api/task/{task_id}")
+async def delete_task(task_id: str, db: Session = Depends(get_db)):
+    """Delete a single transcription task."""
+    task_store = crud.TaskStore(db)
+    if task_store.delete_task(task_id):
+        return {"deleted": True}
+    raise HTTPException(status_code=404, detail="Task not found")
+
 # Error handling
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):

@@ -1,5 +1,8 @@
 document.addEventListener('DOMContentLoaded', async () => {
     // DOM Elements
+    const uploadModal = document.getElementById('upload-modal');
+    const btnOpenUpload = document.getElementById('btn-open-upload');
+    const btnCloseUpload = document.getElementById('btn-close-upload');
     const uploadArea = document.getElementById('upload-area');
     const fileInput = document.getElementById('file-input');
     const errorMessage = document.getElementById('error-message');
@@ -15,6 +18,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     const btnCopy = document.getElementById('btn-copy');
     const btnCloseResult = document.getElementById('btn-close-result');
     const btnCloseResultBottom = document.getElementById('btn-close-result-bottom');
+
+    // Modal handlers
+    if (btnOpenUpload) {
+        btnOpenUpload.addEventListener('click', () => {
+            uploadModal.style.display = 'block';
+        });
+    }
+    if (btnCloseUpload) {
+        btnCloseUpload.addEventListener('click', () => {
+            uploadModal.style.display = 'none';
+        });
+    }
+    uploadModal.addEventListener('click', (e) => {
+        if (e.target === uploadModal) {
+            uploadModal.style.display = 'none';
+        }
+    });
 
     // Load history on page load
     await loadHistory();
@@ -237,10 +257,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                                 <button class="btn btn-secondary btn-edit" data-task-id="${task.task_id}">Editar</button>
                                 <button class="btn btn-primary btn-save" data-task-id="${task.task_id}" style="display:none">Salvar</button>
                                 <button class="btn btn-secondary btn-cancel" data-task-id="${task.task_id}" style="display:none">Cancelar</button>
+                                <button class="btn btn-secondary btn-delete" data-task-id="${task.task_id}" style="background:#fee2e2;color:#dc2626">Deletar</button>
                             </div>
                         </div>
                         <div class="history-item-preview">${escapeHtml(preview)}${task.text.length > 100 ? '...' : ''}</div>
-                        <div class="history-item-meta">Idioma: ${task.language} | Duração: ${task.duration.toFixed(2)}s | ${date}</div>
+                        <div class="history-item-meta">Duração: ${task.duration.toFixed(2)}s | ${date}</div>
                     `;
 
                     // Open detail when clicking item except on buttons
@@ -248,6 +269,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                         if (e.target && e.target.closest && e.target.closest('.btn-edit')) return;
                         if (e.target && e.target.closest && e.target.closest('.btn-save')) return;
                         if (e.target && e.target.closest && e.target.closest('.btn-cancel')) return;
+                        if (e.target && e.target.closest && e.target.closest('.btn-delete')) return;
+                        if (e.target && e.target.classList && e.target.classList.contains('history-item-input')) return;
                         showHistoryDetail(task);
                     });
 
@@ -317,6 +340,22 @@ document.addEventListener('DOMContentLoaded', async () => {
                             editBtn.style.display = 'inline-block';
                         } catch (err) {
                             showError('Erro ao renomear: ' + err.message);
+                        }
+                    });
+                });
+
+                // Delete handlers
+                document.querySelectorAll('.btn-delete').forEach(btn => {
+                    btn.addEventListener('click', async (e) => {
+                        const id = btn.getAttribute('data-task-id');
+                        const container = btn.closest('.history-item');
+                        try {
+                            const resp = await fetch(`/api/task/${id}`, { method: 'DELETE' });
+                            if (!resp.ok) throw new Error('Falha ao deletar');
+                            container.remove();
+                            await loadHistory();
+                        } catch (err) {
+                            showError('Erro ao deletar: ' + err.message);
                         }
                     });
                 });

@@ -64,6 +64,15 @@ class TaskStore:
             self.db.commit()
         return count
 
+    def delete_task(self, task_id: str) -> bool:
+        """Delete a single task by ID."""
+        task = self.get_task(task_id)
+        if task:
+            self.db.delete(task)
+            self.db.commit()
+            return True
+        return False
+
     def delete_old_tasks(self, hours: int):
         # Implementation for cleanup (to be used later)
         # We can implement this when we do the cleanup task
