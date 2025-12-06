@@ -142,3 +142,30 @@ def test_error_handling_graceful():
     resp = client.get("/api/status/non-existent-uuid")
     assert resp.status_code == 404
     assert "detail" in resp.json()
+
+def test_processing_failure_handled_gracefully():
+    """Property 10: Errors are handled gracefully (Processing level)"""
+    # We simulate a processing error by patching the global whisper_service in app.main
+    # differently for this test.
+    with patch("app.main.whisper_service.transcribe", side_effect=Exception("Simulated Whisper Failure")):
+        # 1. Upload
+        content = b"dummy content"
+        filename = "fail_test.mp3"
+        
+        # Mocking validator again to pass upload
+        with patch("app.main.validator.validate", return_value=(True, "OK")):
+            files = {"file": (filename, content, "audio/mpeg")}
+            resp = client.post("/api/upload", files=files)
+            assert resp.status_code == 200
+            task_id = resp.json()["task_id"]
+            
+        # 2. Wait for processing (synchronous execution because of BackgroundTasks logic in TestClient usually?)
+        # Actually TestClient executes BackgroundTasks synchronously unless configured otherwise.
+        
+        # 3. Check status
+        # We need to query status.
+        resp_status = client.get(f"/api/status/{task_id}")
+        assert resp_status.status_code == 200
+        data = resp_status.json()
+        assert data["status"] == "failed"
+        assert "Simulated Whisper Failure" in data["error"]

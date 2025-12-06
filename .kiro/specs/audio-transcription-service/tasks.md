@@ -76,7 +76,7 @@
   - **Property 8: Download filename format**
   - **Validates: Requirements 2.4**
 
-- [ ] 6. Implement background task processing
+- [x] 6. Implement background task processing
   - Create background task function for transcription processing
   - Integrate WhisperService with background tasks
   - Update task status in database during processing
@@ -84,7 +84,7 @@
   - Add file cleanup after processing
   - _Requirements: 3.1, 3.2, 3.3, 3.4_
 
-- [ ] 6.1 Write property test for error handling
+- [x] 6.1 Write property test for error handling
   - **Property 10: Errors are handled gracefully**
   - **Validates: Requirements 3.3, 3.4**
 

@@ -88,8 +88,12 @@ def process_transcription(task_id: str, file_path: str):
         task_store.update_status(task_id, "failed", error_message=str(e))
     finally:
         background_db.close()
-        # Cleanup file? Configurable.
-        # os.remove(file_path) 
+        # Cleanup file if it exists
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except Exception as e:
+                print(f"Error removing file {file_path}: {e}") 
 
 @app.post("/api/upload")
 async def upload_audio(
