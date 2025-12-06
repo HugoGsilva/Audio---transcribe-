@@ -10,7 +10,7 @@ class FileValidator:
         max_size_mb: int = 100,
         allowed_mime_types: List[str] = None
     ):
-        self.allowed_extensions = set(ext.lower() for ext in (allowed_extensions or ["mp3", "wav", "m4a", "ogg", "webm", "flac"]))
+        self.allowed_extensions = set(ext.lower() for ext in (allowed_extensions or ["mp3", "wav", "m4a", "ogg", "webm", "flac", "opus", "ptt"]))
         self.max_size_bytes = max_size_mb * 1024 * 1024
         self.allowed_mime_types = set(allowed_mime_types or [
             "audio/mpeg", 
@@ -20,7 +20,9 @@ class FileValidator:
             "audio/ogg", 
             "audio/webm", 
             "audio/flac", 
-            "application/ogg" 
+            "application/ogg",
+            "audio/opus",
+            "audio/x-opus"
         ])
 
     def validate_filename(self, filename: str) -> Tuple[bool, str]:

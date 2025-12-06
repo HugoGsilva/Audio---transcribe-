@@ -16,7 +16,7 @@ class Settings:
         self.COMPUTE_TYPE = os.getenv("COMPUTE_TYPE", "int8")
         
         self.MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", 100))
-        self.ALLOWED_EXTENSIONS = os.getenv("ALLOWED_EXTENSIONS", "mp3,wav,m4a,ogg,webm,flac").split(",")
+        self.ALLOWED_EXTENSIONS = os.getenv("ALLOWED_EXTENSIONS", "mp3,wav,m4a,ogg,webm,flac,opus,ptt").split(",")
         
         self.DATABASE_PATH = os.getenv("DATABASE_PATH", "/app/data/transcriptions.db")
         self.UPLOAD_DIR = os.getenv("UPLOAD_DIR", "/app/uploads")
