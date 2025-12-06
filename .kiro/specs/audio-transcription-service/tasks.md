@@ -19,14 +19,14 @@
   - **Property 5: Status polling reflects processing state**
   - **Validates: Requirements 1.5, 2.1**
 
-- [ ] 3. Implement Whisper service wrapper
+- [x] 3. Implement Whisper service wrapper
   - Create WhisperService class that loads faster-whisper model
   - Implement async transcribe method using thread pool executor
   - Add model initialization with configurable model size
   - Handle model loading errors and logging
   - _Requirements: 3.1, 3.2, 6.1, 6.2_
 
-- [ ] 3.1 Write property test for Whisper integration
+- [x] 3.1 Write property test for Whisper integration
   - **Property 6: Transcription returns complete text**
   - **Validates: Requirements 2.1, 3.1, 3.2**
 
