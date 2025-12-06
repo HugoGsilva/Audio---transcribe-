@@ -6,6 +6,7 @@ WORKDIR /app
 # ffmpeg is needed for audio processing
 RUN apt-get update && apt-get install -y \
     ffmpeg \
+    libmagic1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

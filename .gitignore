@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv
+venv/
+env/
+
+# IDEs
+.vscode/
+.idea/
+
+# Testing
+.hypothesis/
+.pytest_cache/
+test_output.txt
+
+# Project specific
+uploads/
+!uploads/.gitkeep
+data/
+!data/.gitkeep
+whisper_cache/

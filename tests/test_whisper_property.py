@@ -1,4 +1,4 @@
-from hypothesis import given, strategies as st
+from hypothesis import given, strategies as st, settings, HealthCheck
 import pytest
 from unittest.mock import MagicMock, patch
 from app.whisper_service import WhisperService
@@ -10,6 +10,7 @@ def mock_whisper_model():
         instance = MockModel.return_value
         yield instance
 
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(st.lists(st.text(min_size=1), min_size=1, max_size=10), st.text(min_size=2, max_size=2), st.floats(min_value=0.1, max_value=100.0))
 def test_transcription_reassembly_property(mock_whisper_model, segments_text, language, duration):
     """

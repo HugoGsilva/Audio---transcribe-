@@ -30,26 +30,26 @@
   - **Property 6: Transcription returns complete text**
   - **Validates: Requirements 2.1, 3.1, 3.2**
 
-- [ ] 4. Implement file validation utilities
+- [x] 4. Implement file validation utilities
   - Create FileValidator class with extension and MIME type validation
   - Implement file size validation
   - Add filename sanitization
   - Create validation error messages
   - _Requirements: 1.2, 1.3, 5.1, 5.2_
 
-- [ ] 4.1 Write property test for file validation
+- [x] 4.1 Write property test for file validation
   - **Property 1: Valid audio formats are accepted**
   - **Validates: Requirements 1.2, 1.3**
 
-- [ ] 4.2 Write property test for invalid file rejection
+- [x] 4.2 Write property test for invalid file rejection
   - **Property 2: Invalid file types are rejected**
   - **Validates: Requirements 5.1**
 
-- [ ] 4.3 Write property test for file size validation
+- [x] 4.3 Write property test for file size validation
   - **Property 3: Oversized files are rejected**
   - **Validates: Requirements 5.2**
 
-- [ ] 4.4 Write property test for validation order
+- [x] 4.4 Write property test for validation order
   - **Property 9: Validation occurs before processing**
   - **Validates: Requirements 1.3**
 
