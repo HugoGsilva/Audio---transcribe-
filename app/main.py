@@ -226,6 +226,19 @@ async def get_user_info(db: Session = Depends(get_db), current_user: models.User
     }
 
 
+@app.post("/api/admin/user/{user_id}/toggle-admin")
+async def toggle_admin_status(user_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    if current_user.is_admin != "True":
+        raise HTTPException(status_code=403, detail="Acesso exclusivo para administradores")
+    if user_id == current_user.id:
+         raise HTTPException(status_code=400, detail="Não é possível alterar seu próprio status de admin")
+         
+    task_store = crud.TaskStore(db)
+    if task_store.toggle_admin_status(user_id):
+        return {"message": "Status de admin alterado"}
+    raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+
 
 def process_transcription(task_id: str, file_path: str):
     from .database import SessionLocal

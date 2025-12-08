@@ -74,6 +74,7 @@ body {
 
 /* Sidebar */
 .sidebar {
+    position: relative;
     width: 260px;
     background: var(--bg-sidebar);
     border-right: 1px solid var(--border);
@@ -81,7 +82,74 @@ body {
     flex-direction: column;
     padding: 24px;
     z-index: 10;
+    transition: width 0.3s ease, padding 0.3s ease;
 }
+
+.sidebar.collapsed {
+    width: 80px;
+    padding: 24px 12px;
+}
+
+.sidebar.collapsed .logo-area span,
+.sidebar.collapsed .nav-item span,
+.sidebar.collapsed .toggle-label,
+.sidebar.collapsed .theme-toggle span {
+    opacity: 0;
+    width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+
+.sidebar.collapsed .logo-area {
+    justify-content: center;
+}
+
+.sidebar.collapsed .nav-item {
+    justify-content: center;
+    padding: 12px;
+}
+
+.sidebar.collapsed .theme-toggle {
+    justify-content: center;
+}
+
+.sidebar.collapsed .sidebar-toggle i {
+    transform: rotate(180deg);
+}
+
+.sidebar-toggle {
+    position: absolute;
+    top: 28px;
+    right: -14px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--bg-card);
+    border: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--text-muted);
+    transition: all 0.2s;
+    z-index: 100;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.sidebar-toggle:hover {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+    transform: scale(1.1);
+}
+
+.sidebar-toggle i {
+    font-size: 14px;
+    transition: transform 0.3s ease;
+}
+
+
 
 .logo-area {
     display: flex;
@@ -93,6 +161,11 @@ body {
     letter-spacing: -0.02em;
     color: var(--primary);
 }
+
+.logo-area span {
+    transition: opacity 0.3s ease, width 0.3s ease;
+}
+
 
 .nav-links {
     flex: 1;

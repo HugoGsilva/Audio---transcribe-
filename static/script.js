@@ -228,6 +228,24 @@ document.addEventListener('DOMContentLoaded', () => {
     if (themeToggle) themeToggle.addEventListener('click', toggleTheme);
     initTheme(); // Run on load
 
+    // Sidebar Collapse Toggle
+    const sidebarToggle = document.getElementById('sidebar-toggle');
+    const sidebar = document.querySelector('.sidebar');
+
+    // Load saved state
+    const sidebarCollapsed = localStorage.getItem('sidebar-collapsed') === 'true';
+    if (sidebarCollapsed && sidebar) {
+        sidebar.classList.add('collapsed');
+    }
+
+    if (sidebarToggle && sidebar) {
+        sidebarToggle.addEventListener('click', () => {
+            sidebar.classList.toggle('collapsed');
+            const isCollapsed = sidebar.classList.contains('collapsed');
+            localStorage.setItem('sidebar-collapsed', isCollapsed);
+        });
+    }
+
     // Upload Interaction
     if (uploadBtn) uploadBtn.addEventListener('click', () => fileInput.click());
 
@@ -587,6 +605,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         </span>
                         ${u.is_admin === "True" ? '<span style="font-size:0.8rem; color:var(--primary); font-weight:bold">Admin</span>' : ''}
                         
+                        <button class="action-btn" onclick="toggleAdmin('${u.id}', ${u.is_admin === "True"})" title="${u.is_admin === "True" ? 'Remover Admin' : 'Tornar Admin'}">
+                            <i class="ph ${u.is_admin === "True" ? 'ph-shield-slash' : 'ph-shield-check'}"></i>
+                        </button>
                         <button class="action-btn" onclick="changeLimit('${u.id}', ${limit})" title="Definir Limite">
                             <i class="ph ph-faders"></i>
                         </button>
@@ -692,6 +713,23 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             loadAdminUsers(); // Refresh to show new limit
         } catch (e) { alert('Erro ao definir limite.'); }
+    }
+
+    window.toggleAdmin = async (id, isCurrentlyAdmin) => {
+        const action = isCurrentlyAdmin ? 'remover privilégios de admin' : 'tornar admin';
+        if (!confirm(`Tem certeza que deseja ${action} deste usuário?`)) return;
+
+        try {
+            const res = await authFetch(`/api/admin/user/${id}/toggle-admin`, { method: 'POST' });
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.detail || 'Erro ao alterar status');
+            }
+            alert('Status de admin alterado com sucesso!');
+            loadAdminUsers(); // Refresh to show new status
+        } catch (e) {
+            alert(e.message);
+        }
     }
 
     // Load User Info (Usage/Limit)

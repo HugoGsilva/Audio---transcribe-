@@ -137,6 +137,15 @@ class TaskStore:
             return True
         return False
     
+    def toggle_admin_status(self, user_id):
+        user = self.db.query(models.User).filter(models.User.id == user_id).first()
+        if user:
+            # Toggle between "True" and "False" strings
+            user.is_admin = "False" if user.is_admin == "True" else "True"
+            self.db.commit()
+            return True
+        return False
+    
     def count_user_tasks(self, user_id):
         # Count non-failed tasks for limit usage
         return self.db.query(models.TranscriptionTask).filter(
