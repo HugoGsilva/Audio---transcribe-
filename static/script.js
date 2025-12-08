@@ -55,6 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
         dashboardView.classList.remove('hidden');
 
         loadHistory();
+        loadUserInfo();
     }
 
     let reportsChart = null;
@@ -313,6 +314,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         item.remove();
                         if (inprogressList.children.length === 0) statusSection.classList.add('hidden');
                         loadHistory();
+                        loadUserInfo(); // Refresh usage display
                     }, 1000);
                 } else if (data.status === 'failed') {
                     clearInterval(interval);
@@ -565,7 +567,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // Content for user row
                 const usage = u.usage || 0;
-                const limit = u.transcription_limit || 10;
+                const limit = u.transcription_limit || 100;
 
                 const userContent = `
                     <div style="flex:1">
@@ -692,8 +694,34 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (e) { alert('Erro ao definir limite.'); }
     }
 
+    // Load User Info (Usage/Limit)
+    async function loadUserInfo() {
+        try {
+            const res = await authFetch('/api/user/info');
+            const data = await res.json();
+
+            const usageDisplay = document.getElementById('usage-display');
+            if (usageDisplay) {
+                usageDisplay.textContent = `${data.usage} / ${data.limit}`;
+
+                // Optional: Add color coding based on usage percentage
+                const percentage = (data.usage / data.limit) * 100;
+                if (percentage >= 90) {
+                    usageDisplay.style.color = 'var(--danger)';
+                } else if (percentage >= 70) {
+                    usageDisplay.style.color = 'var(--warning)';
+                } else {
+                    usageDisplay.style.color = 'var(--success)';
+                }
+            }
+        } catch (err) {
+            console.error('Erro ao carregar informações do usuário', err);
+        }
+    }
+
     // Default load
     loadHistory();
+    loadUserInfo();
 
     // Utils
     function escapeHtml(text) {

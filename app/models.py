@@ -49,6 +49,6 @@ class User(Base):
     email = Column(String, nullable=True)
     is_active = Column(String, default="False") # Boolean as string for simplicity in SQLite or use Boolean
     is_admin = Column(String, default="False")
-    transcription_limit = Column(Integer, default=10)
+    transcription_limit = Column(Integer, default=100)
 
 

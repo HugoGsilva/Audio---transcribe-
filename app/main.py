@@ -212,6 +212,21 @@ async def delete_user(user_id: str, db: Session = Depends(get_db), current_user:
     raise HTTPException(status_code=404, detail="Usuário não encontrado")
 
 
+@app.get("/api/user/info")
+async def get_user_info(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    """Get current user's transcription usage and limit"""
+    task_store = crud.TaskStore(db)
+    usage = task_store.count_user_tasks(current_user.id)
+    limit = current_user.transcription_limit if current_user.transcription_limit is not None else 100
+    
+    return {
+        "username": current_user.username,
+        "usage": usage,
+        "limit": limit
+    }
+
+
+
 def process_transcription(task_id: str, file_path: str):
     from .database import SessionLocal
     background_db = SessionLocal()
@@ -257,7 +272,7 @@ async def upload_audio(
     # Check limits if not admin
     if current_user.is_admin != "True":
         usage = task_store.count_user_tasks(current_user.id)
-        limit = current_user.transcription_limit if current_user.transcription_limit is not None else 10
+        limit = current_user.transcription_limit if current_user.transcription_limit is not None else 100
         if usage >= limit:
              raise HTTPException(status_code=403, detail=f"Limite de transcrições atingido ({usage}/{limit}). Contate o admin.")
 
