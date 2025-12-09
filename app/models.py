@@ -20,6 +20,7 @@ class TranscriptionTask(Base):
     progress = Column(Integer, default=0, nullable=False)
     processing_time = Column(Float, nullable=True)
     analysis_status = Column(String, default="Pendente de análise", nullable=True)
+    options = Column(Text, nullable=True)
     owner_id = Column(String, nullable=True) # ForeignKey to User.id (as string uuid)
 
     def to_dict(self):
@@ -35,7 +36,9 @@ class TranscriptionTask(Base):
             "language": self.language,
             "duration": self.duration,
             "processing_time": self.processing_time,
-            "analysis_status": self.analysis_status or "Pendente de análise"
+            "processing_time": self.processing_time,
+            "analysis_status": self.analysis_status or "Pendente de análise",
+            "options": self.options
             # omitting result_text for list views usually, but can be added if needed
         }
 
@@ -49,6 +52,6 @@ class User(Base):
     email = Column(String, nullable=True)
     is_active = Column(String, default="False") # Boolean as string for simplicity in SQLite or use Boolean
     is_admin = Column(String, default="False")
-    transcription_limit = Column(Integer, default=100)
+    transcription_limit = Column(Integer, default=30)
 
 

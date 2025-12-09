@@ -62,6 +62,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const dashboardView = document.getElementById('dashboard-view');
     const adminView = document.getElementById('admin-view');
     const reportView = document.getElementById('report-view');
+    const terminalView = document.getElementById('terminal-view');
+    const terminalLink = document.getElementById('terminal-link');
 
     // DOM Elements - Theme & Sidebar
     const themeToggle = document.getElementById('theme-toggle');
@@ -114,6 +116,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateNav(dashboardLink);
         adminView.classList.add('hidden');
         reportView.classList.add('hidden');
+        if (terminalView) terminalView.classList.add('hidden');
         dashboardView.classList.remove('hidden');
         loadHistory();
         loadUserInfo();
@@ -125,6 +128,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateNav(reportLink);
         adminView.classList.add('hidden');
         dashboardView.classList.add('hidden');
+        if (terminalView) terminalView.classList.add('hidden');
         reportView.classList.remove('hidden');
         await loadReports();
     }
@@ -134,6 +138,7 @@ document.addEventListener('DOMContentLoaded', () => {
         updateNav(adminLink);
         dashboardView.classList.add('hidden');
         reportView.classList.add('hidden');
+        if (terminalView) terminalView.classList.add('hidden');
         adminView.classList.remove('hidden');
 
         if (!document.getElementById('pending-users-list')) {
@@ -149,9 +154,44 @@ document.addEventListener('DOMContentLoaded', () => {
         loadAdminUsers();
     }
 
+    async function showTerminal(e) {
+        if (e) e.preventDefault();
+        updateNav(terminalLink);
+        dashboardView.classList.add('hidden');
+        adminView.classList.add('hidden');
+        reportView.classList.add('hidden');
+        if (terminalView) terminalView.classList.remove('hidden');
+        startTerminalPoll();
+    }
+
+    let terminalInterval = null;
+    function startTerminalPoll() {
+        if (terminalInterval) clearInterval(terminalInterval);
+        loadLogs();
+        terminalInterval = setInterval(loadLogs, 2000);
+    }
+
+    async function loadLogs() {
+        const tv = document.getElementById('terminal-view');
+        if (!tv || tv.classList.contains('hidden')) {
+            if (terminalInterval) clearInterval(terminalInterval);
+            return;
+        }
+        try {
+            const res = await authFetch('/api/logs?limit=200');
+            const data = await res.json();
+            const out = document.getElementById('terminal-output');
+            if (data.logs && out) {
+                out.textContent = data.logs.join('');
+                out.scrollTop = out.scrollHeight;
+            }
+        } catch (e) { }
+    }
+
     // Nav Events
     if (dashboardLink) dashboardLink.addEventListener('click', showDashboard);
     if (reportLink) reportLink.addEventListener('click', showReports);
+    if (terminalLink) terminalLink.addEventListener('click', showTerminal);
     if (joinQldLink) joinQldLink.addEventListener('click', (e) => { e.preventDefault(); updateNav(joinQldLink); showToast('Funcionalidade em desenvolvimento', 'ph-wrench'); });
     if (joinCapLink) joinCapLink.addEventListener('click', (e) => { e.preventDefault(); updateNav(joinCapLink); showToast('Funcionalidade em desenvolvimento', 'ph-wrench'); });
 
@@ -159,6 +199,7 @@ document.addEventListener('DOMContentLoaded', () => {
         adminLink.classList.remove('hidden');
         adminLink.addEventListener('click', showAdminPanel);
     }
+    if (isAdmin && terminalLink) terminalLink.classList.remove('hidden');
 
     // Theme Logic
     const initTheme = () => {
@@ -233,6 +274,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const formData = new FormData();
         formData.append('file', file);
+        // Options
+        const ts = document.getElementById('opt-timestamp');
+        const dr = document.getElementById('opt-diarization');
+        if (ts) formData.append('timestamp', ts.checked);
+        if (dr) formData.append('diarization', dr.checked);
         const bar = item.querySelector('.progress-bar-fill');
         const consoleEl = item.querySelector(`#console-${itemId}`);
 
@@ -314,6 +360,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         item.addLog('Concluído!');
                         item.addLog('Atualizando lista...');
                     }
+                    showNativeNotification('Processamento Concluído', 'Sua transcrição está pronta.');
                     setTimeout(() => {
                         item.remove();
                         if (inprogressList.children.length === 0) statusSection.classList.add('hidden');
@@ -330,6 +377,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- History Logic ---
+    const knownCompleted = new Set();
+
+    function formatDuration(seconds) {
+        if (!seconds || isNaN(seconds)) return "00m00s";
+        const m = Math.floor(seconds / 60);
+        const s = Math.floor(seconds % 60);
+        return `${m.toString().padStart(2, '0')}m${s.toString().padStart(2, '0')}s`;
+    }
+
+    function showNativeNotification(title, body) {
+        if (Notification.permission === 'granted') {
+            new Notification(title, { body, icon: '/static/favicon.ico' });
+        }
+    }
+
     let showingAllHistory = false;
     async function loadHistory(showAll = false) {
         if (!historyBody) return;
@@ -440,7 +502,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             ${task.completed_at ? new Date(task.completed_at).toLocaleString() : 'Em andamento'}
                             ${task.completed_at ? `<div style="font-size:0.75rem; opacity:0.7">Processado em: ${durationText}</div>` : ''}
                         </td>
-                        <td>${task.duration ? task.duration.toFixed(1) + 's' : '-'}</td>
+                        <td>${formatDuration(task.duration)}</td>
                         ${statusHtml}
                         <td><div style="display:flex; gap:4px;">${actionsHtml}</div></td>
                     `;
@@ -599,9 +661,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!res.ok) throw new Error('Falha ao buscar');
             const data = await res.json();
 
-            resultText.value = data.text || 'Sem transcrição.';
-
-            // Metadata: File Name, Duration, Task ID
+            // Set Metadata
             resultMeta.innerHTML = `
                 <div class="meta-grid">
                     <div class="meta-item">
@@ -610,7 +670,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">Duração</span>
-                        <div class="meta-value"><i class="ph ph-clock"></i> ${data.duration ? data.duration.toFixed(2) + 's' : '-'}</div>
+                        <div class="meta-value"><i class="ph ph-clock"></i> ${formatDuration(data.duration)}</div>
+                    </div>
+                     <div class="meta-item">
+                        <span class="meta-label">Config</span>
+                        <div class="meta-value"><i class="ph ph-sliders"></i> ${(() => {
+                    try {
+                        if (!data.options) return 'N/A';
+                        const o = JSON.parse(data.options);
+                        const t = [];
+                        if (o.timestamp) t.push('Time');
+                        if (o.diarization) t.push('Diar');
+                        return t.length ? t.join('+') : 'Simples';
+                    } catch (e) { return 'N/A'; }
+                })()}</div>
                     </div>
                     <div class="meta-item" style="cursor:pointer;" onclick="event.stopPropagation(); copyToClipboard('${id}')" title="Clique para copiar ID">
                         <span class="meta-label">Task ID</span>
@@ -618,15 +691,72 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 </div>`;
 
+            // Chat UI Generation
+            const rawText = data.text || '';
+            const lines = rawText.split('\n');
+            const chatContainer = document.createElement('div');
+            chatContainer.className = 'chat-container';
+            chatContainer.id = 'chat-result-view';
+
+            if (!rawText.trim()) {
+                chatContainer.innerHTML = '<div style="color:var(--text-muted); text-align:center">Nenhuma transcrição disponível.</div>';
+            } else {
+                lines.forEach(line => {
+                    // Regex for "[MM:SS] [Pessoa X]: Content" or similar
+                    // Matches: [01:20] [Pessoa 1]: Hello
+                    const match = line.match(/^\[(\d{2}:\d{2})\]\s*(?:\[(.*?)\]:\s*)?(.*)/);
+
+                    if (match) {
+                        const time = match[1];
+                        const speakerTag = match[2] || '?'; // "Pessoa 1", "Pessoa 2", or undefined
+                        const content = match[3];
+
+                        const msgDiv = document.createElement('div');
+
+                        // Determine side based on speaker
+                        let side = 'left';
+                        if (speakerTag.toLowerCase().includes('pessoa 2') || speakerTag.toLowerCase().includes('cliente')) {
+                            side = 'right';
+                        }
+
+                        msgDiv.className = `chat-msg ${side}`;
+                        msgDiv.innerHTML = `
+                            <div class="chat-bubble">
+                                ${escapeHtml(content)}
+                            </div>
+                            <div class="chat-info">${time} • ${escapeHtml(speakerTag)}</div>
+                        `;
+                        chatContainer.appendChild(msgDiv);
+                    } else {
+                        // Fallback for non-matching lines (e.g. continuations)
+                        if (line.trim()) {
+                            const msgDiv = document.createElement('div');
+                            msgDiv.className = 'chat-msg left';
+                            msgDiv.innerHTML = `<div class="chat-bubble">${escapeHtml(line)}</div>`;
+                            chatContainer.appendChild(msgDiv);
+                        }
+                    }
+                });
+            }
+
+            // Replace TextArea with Chat
+            if (resultText) {
+                resultText.style.display = 'none';
+                // Remove old chat if exists
+                const oldChat = document.getElementById('chat-result-view');
+                if (oldChat) oldChat.remove();
+
+                resultText.parentNode.insertBefore(chatContainer, resultText);
+            }
+
             if (btnDownload) btnDownload.onclick = () => window.downloadFile(id);
             if (btnDownloadAudio) btnDownloadAudio.onclick = () => window.downloadAudio(id);
 
-            // Setup Player
+            // Audio Player (Same as before)
             if (audioPlayerContainer && audioEl) {
                 audioEl.pause();
                 audioEl.src = "";
                 audioPlayerContainer.classList.add('hidden');
-
                 try {
                     const aRes = await authFetch(`/api/audio/${id}`);
                     if (aRes.ok) {
@@ -636,12 +766,11 @@ document.addEventListener('DOMContentLoaded', () => {
                             audioEl.src = url;
                             audioPlayerContainer.classList.remove('hidden');
                         }
-                    } else {
-                        console.warn("Audio fetch failed status:", aRes.status);
                     }
-                } catch (e) { console.warn("Audio error", e); }
+                } catch (e) { }
             }
             if (resultModal) resultModal.style.display = 'grid';
+
         } catch (e) {
             console.error(e);
             alert('Erro ao abrir resultado');
@@ -776,7 +905,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await authFetch('/api/user/info');
             const data = await res.json();
             if (usageDisplay) {
-                if (data.limit === 0) {
+                if (data.limit === 0 || data.is_admin === "True") {
                     usageDisplay.textContent = `${data.usage} / ∞`;
                     usageDisplay.style.color = 'var(--success)';
                 } else {
@@ -789,6 +918,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Initial Load
+    Notification.requestPermission();
     loadHistory();
     loadUserInfo();
 });

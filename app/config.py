@@ -3,9 +3,14 @@ import logging
 from typing import List
 
 # Setup logging
+# Setup logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("/app/data/app.log", mode='a', encoding='utf-8')
+    ]
 )
 logger = logging.getLogger(__name__)
 

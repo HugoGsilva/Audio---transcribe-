@@ -65,11 +65,11 @@ class WhisperService:
         
         output_path = f"{input_path}_proc_{uuid.uuid4().hex[:6]}.wav"
         
-        # Phone band filter + Normalization
-        # highpass=f=200,lowpass=f=3400: Typical voice band
+        # Phone band filter + Dynamic Normalization (Leveling)
+        # dynaudnorm helps balance volume between speakers (e.g. mic vs phone)
         command = [
             "ffmpeg", "-y", "-i", input_path,
-            "-af", "highpass=f=200,lowpass=f=3400,loudnorm",
+            "-af", "highpass=f=200,lowpass=f=3400,dynaudnorm=f=150:g=15",
             "-ar", "16000", "-ac", "1", # Convert to mono 16k for Whisper
             output_path
         ]
@@ -81,9 +81,10 @@ class WhisperService:
             logger.error(f"FFmpeg preprocessing failed: {e}")
             return input_path # Fallback to original
 
-    def transcribe(self, audio_file_path: str) -> dict:
+    def transcribe(self, audio_file_path: str, options: dict = {}) -> dict:
         """
         Transcribes audio. Applies preprocessing first.
+        options: {'timestamp': bool, 'diarization': bool}
         """
         if not self.model:
             raise RuntimeError("Model not loaded")
@@ -93,7 +94,26 @@ class WhisperService:
 
         # Preprocess first (Noise Reduction)
         processed_path = self.preprocess_audio(audio_file_path)
-        final_path = processed_path if processed_path != audio_file_path else audio_file_path
+        
+        # Audio Replacement: Overwrite original with processed audio
+        if processed_path != audio_file_path:
+             try:
+                 import shutil
+                 # Move/Overwrite logic
+                 shutil.move(processed_path, audio_file_path)
+                 logger.info(f"Overwrote original file {audio_file_path} with processed version.")
+             except Exception as e:
+                 logger.error(f"Failed to overwrite original file: {e}")
+                 # If move fails, try to use processed_path if exists, else original
+                 if os.path.exists(processed_path):
+                     pass # Continue using processed_path
+                 else:
+                     processed_path = audio_file_path
+        
+        # Now processed_path points to the audio we want to transcribe
+        # But wait, if we moved it, processed_path no longer exists at old location
+        # processed_path IS audio_file_path now.
+        final_path = audio_file_path
         
         try:
             if hasattr(self, 'batched_model') and self.batched_model:
@@ -101,15 +121,46 @@ class WhisperService:
             else:
                  segments, info = self.model.transcribe(final_path, beam_size=5)
             
-            # Format text with timestamps
+            # Consume generator
+            segments = list(segments)
+            
+            # 2. Diarization
+            speaker_labels = [0] * len(segments)
+            use_diarization = options.get('diarization', True)
+            
+            if len(segments) > 0 and use_diarization:
+                logger.info("Starting Diarization...")
+                labels = self._get_speaker_embedding(final_path, segments)
+                if labels:
+                    speaker_labels = labels
+
+            # 3. Format Output
             formatted_lines = []
-            for segment in segments:
+            
+            for i, segment in enumerate(segments):
+                use_timestamp = options.get('timestamp', True)
+                
                 start = segment.start
-                # Simple formatting
                 mm = int(start // 60)
                 ss = int(start % 60)
-                time_str = f"[{mm:02d}:{ss:02d}]"
-                formatted_lines.append(f"{time_str} {segment.text.strip()}")
+                time_str = f"[{mm:02d}:{ss:02d}]" if use_timestamp else ""
+                
+                spk_tag = ""
+                if use_diarization:
+                    spk_idx = speaker_labels[i]
+                    if spk_idx == -1:
+                        spk_tag = "[?]"
+                    else:
+                        spk_tag = f"[Pessoa {spk_idx + 1}]"
+                
+                # Combine parts: [Time] [Speaker]: Text
+                # Filter empty parts
+                parts = [p for p in [time_str, spk_tag] if p]
+                prefix = " ".join(parts)
+                if prefix:
+                     formatted_lines.append(f"{prefix}: {segment.text.strip()}")
+                else:
+                     formatted_lines.append(segment.text.strip())
 
             full_text = "\n".join(formatted_lines)
             
@@ -223,74 +274,4 @@ class WhisperService:
             logger.error(f"Diarization failed: {e}")
             return None # Fallback
 
-    def transcribe(self, audio_file_path: str) -> dict:
-        """
-        Transcribes audio with Diarization and Preprocessing.
-        """
-        if not self.model:
-            raise RuntimeError("Model not loaded")
 
-        if not os.path.exists(audio_file_path):
-             raise FileNotFoundError(f"Audio file not found: {audio_file_path}")
-
-        # Preprocess (Noise Reduction)
-        processed_path = self.preprocess_audio(audio_file_path)
-        final_path = processed_path if processed_path != audio_file_path else audio_file_path
-        
-        try:
-            # 1. Transcribe
-            if hasattr(self, 'batched_model') and self.batched_model:
-                 segments_gen, info = self.batched_model.transcribe(final_path, batch_size=16)
-            else:
-                 segments_gen, info = self.model.transcribe(final_path, beam_size=5)
-            
-            # Consume generator
-            segments = list(segments_gen)
-            
-            # 2. Diarization (Token-Free via SpeechBrain)
-            # Only run if we have segments
-            speaker_labels = [0] * len(segments)
-            if len(segments) > 0:
-                logger.info("Starting Diarization...")
-                # Pass ORIGINAL file (better quality than processed?) or processed?
-                # Processed has noise reduction, likely better for embeddings.
-                labels = self._get_speaker_embedding(final_path, segments)
-                if labels:
-                    speaker_labels = labels
-
-            # 3. Format Output
-            formatted_lines = []
-            current_speaker = None
-            
-            # Speaker Map (0 -> Pessoa 1, 1 -> Pessoa 2)
-            # Try to guess who is who? Impossible without profile.
-            # Just label consistently.
-            
-            for i, segment in enumerate(segments):
-                start = segment.start
-                mm = int(start // 60)
-                ss = int(start % 60)
-                time_str = f"[{mm:02d}:{ss:02d}]"
-                
-                spk_idx = speaker_labels[i]
-                if spk_idx == -1:
-                    spk_tag = "[?]"
-                else:
-                    spk_tag = f"[Pessoa {spk_idx + 1}]"
-                
-                formatted_lines.append(f"{time_str} {spk_tag}: {segment.text.strip()}")
-
-            full_text = "\n".join(formatted_lines)
-            
-            return {
-                "text": full_text,
-                "language": info.language,
-                "duration": info.duration
-            }
-        except Exception as e:
-            logger.error(f"Error during transcription of {audio_file_path}: {e}")
-            raise e
-        finally:
-            if processed_path != audio_file_path and os.path.exists(processed_path):
-                try: os.remove(processed_path)
-                except: pass

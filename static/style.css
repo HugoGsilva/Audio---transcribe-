@@ -753,6 +753,7 @@ tr:hover td {
 
 .volume-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
+    appearance: none;
     width: 12px;
     height: 12px;
     border-radius: 50%;
@@ -828,10 +829,11 @@ tr:hover td {
     background: var(--bg-card);
     border: 2px dashed var(--border);
     border-radius: 16px;
-    padding: 40px;
+    padding: 16px;
     text-align: center;
     transition: all 0.3s ease;
     cursor: pointer;
+    min-height: auto;
     margin-bottom: 32px;
 }
 
@@ -842,16 +844,16 @@ tr:hover td {
 }
 
 .upload-icon-wrapper {
-    width: 64px;
-    height: 64px;
+    width: 48px;
+    height: 48px;
     background: rgba(59, 130, 246, 0.1);
     color: var(--primary);
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 32px;
-    margin: 0 auto 16px;
+    font-size: 24px;
+    margin: 0 auto 12px;
 }
 
 /* Stats Grid for Reports (Restored) */
@@ -882,4 +884,67 @@ tr:hover td {
     font-size: 2rem;
     font-weight: 700;
     color: var(--text-main);
+}
+
+/* Chat Transcription UI */
+.chat-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 16px;
+    max-height: 400px;
+    overflow-y: auto;
+    background: var(--bg-body);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    margin-bottom: 16px;
+}
+
+.chat-msg {
+    display: flex;
+    flex-direction: column;
+    max-width: 80%;
+}
+
+.chat-msg.left {
+    align-self: flex-start;
+}
+
+.chat-msg.right {
+    align-self: flex-end;
+}
+
+.chat-bubble {
+    padding: 10px 14px;
+    border-radius: 16px;
+    font-size: 0.95rem;
+    line-height: 1.4;
+    position: relative;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.chat-msg.left .chat-bubble {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-bottom-left-radius: 4px;
+    color: var(--text-main);
+}
+
+.chat-msg.right .chat-bubble {
+    background: var(--primary);
+    color: #fff;
+    border-bottom-right-radius: 4px;
+}
+
+.chat-info {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+    display: flex;
+    gap: 8px;
+}
+
+.chat-msg.right .chat-info {
+    justify-content: flex-end;
 }

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, BackgroundTasks, status
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, BackgroundTasks, status
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -60,7 +60,14 @@ task_queue: asyncio.Queue = asyncio.Queue()
 async def task_consumer():
     from .database import SessionLocal
     while True:
-        task_id, file_path = await task_queue.get()
+        item = await task_queue.get()
+        if len(item) == 3:
+            task_id, file_path, options = item
+        else:
+             # Backward compatibility or simple tuple
+             task_id, file_path = item
+             options = {}
+             
         db = SessionLocal()
         task_store = crud.TaskStore(db)
         
@@ -78,7 +85,7 @@ async def task_consumer():
         try:
             # Run blocking transcription in a separate thread
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, process_transcription, task_id, file_path)
+            await loop.run_in_executor(None, process_transcription, task_id, file_path, options)
             
             task_store.update_progress(task_id, 100)
         except Exception:
@@ -112,7 +119,19 @@ async def startup_event():
         )
         db.add(new_user)
         db.commit()
+        db.commit()
         logger.info("Created Admin user with empty password")
+    
+    # Auto-migration: Add 'options' column if not exists
+    try:
+        from sqlalchemy import text
+        db.execute(text("ALTER TABLE transcription_tasks ADD COLUMN options TEXT"))
+        db.commit()
+        logger.info("Migration: Added 'options' column.")
+    except Exception as e:
+        # Column likely exists
+        # logger.info(f"Migration skip: {e}")
+        db.rollback()
     
     # Cleanup: Cancel and delete all pending/processing tasks on startup
     # This ensures a clean slate as requested
@@ -206,6 +225,26 @@ async def register(user: RegisterModel, db: Session = Depends(get_db)):
 
 
 # Admin Endpoints
+@app.get("/api/logs")
+async def get_logs(limit: int = 100, current_user: models.User = Depends(auth.get_current_user)):
+    """Get application logs from file"""
+    if current_user.is_admin != "True":
+        raise HTTPException(status_code=403, detail="Acesso restrito ao Administrador")
+    
+    log_file = "/app/data/app.log"
+    if not os.path.exists(log_file):
+        return {"logs": ["Log file not found."]}
+        
+    try:
+        # Efficiently read last N lines (simple consistency)
+        with open(log_file, "r", encoding="utf-8", errors='ignore') as f:
+            # Read all is okay for small logs, but for large...
+            # A simple approach for < 10MB logs
+            lines = f.readlines()
+            return {"logs": lines[-limit:]}
+    except Exception as e:
+        return {"logs": [f"Error reading logs: {str(e)}"]}
+
 @app.get("/api/admin/users")
 async def get_all_users(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     if current_user.is_admin != "True":
@@ -288,6 +327,7 @@ async def get_user_info(db: Session = Depends(get_db), current_user: models.User
     
     return {
         "username": current_user.username,
+        "is_admin": current_user.is_admin,
         "usage": usage,
         "limit": limit
     }
@@ -307,7 +347,7 @@ async def toggle_admin_status(user_id: str, db: Session = Depends(get_db), curre
 
 
 
-def process_transcription(task_id: str, file_path: str):
+def process_transcription(task_id: str, file_path: str, options: dict = {}):
     from .database import SessionLocal
     background_db = SessionLocal()
     task_store = crud.TaskStore(background_db)
@@ -317,7 +357,7 @@ def process_transcription(task_id: str, file_path: str):
         task_store.update_status(task_id, "processing")
         
         start_ts = perf_counter()
-        result = whisper_service.transcribe(file_path)
+        result = whisper_service.transcribe(file_path, options=options)
         processing_time = perf_counter() - start_ts
 
         task_store.save_result(
@@ -346,7 +386,9 @@ async def upload_audio(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(auth.get_current_user)
+    current_user: models.User = Depends(auth.get_current_user),
+    timestamp: bool = Form(True),
+    diarization: bool = Form(True)
 ):
     task_store = crud.TaskStore(db)
     
@@ -384,14 +426,16 @@ async def upload_audio(
          raise HTTPException(status_code=500, detail=f"Falha ao salvar arquivo: {str(e)}")
 
     # 3. Create task in DB
+    options = {"timestamp": timestamp, "diarization": diarization}
     task = task_store.create_task(
         filename=file.filename,
         file_path=file_path,
-        owner_id=current_user.id
+        owner_id=current_user.id,
+        options=options
     )
     
-    # 4. Enqueue task for sequential processing
-    await task_queue.put((task.task_id, file_path))
+    # 4. Enqueue task for sequential processing with options
+    await task_queue.put((task.task_id, file_path, options))
     
     return {
         "task_id": task.task_id,

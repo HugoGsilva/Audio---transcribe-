@@ -9,13 +9,17 @@ class TaskStore:
     def __init__(self, db: Session):
         self.db = db
 
-    def create_task(self, filename: str, file_path: str, owner_id: str) -> models.TranscriptionTask:
+    def create_task(self, filename: str, file_path: str, owner_id: str, options: dict = None) -> models.TranscriptionTask:
+        import json
+        options_str = json.dumps(options) if options else None
+        
         task = models.TranscriptionTask(
             filename=filename,
             file_path=file_path,
             owner_id=owner_id,
             status="queued",
-            progress=0
+            progress=0,
+            options=options_str
         )
         self.db.add(task)
         self.db.commit()
