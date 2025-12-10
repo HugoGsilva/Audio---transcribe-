@@ -183,7 +183,7 @@ class TaskStore:
             models.TranscriptionTask.status != "failed"
         ).count()
         
-    def get_all_tasks_admin(self):
+    def get_all_tasks_admin(self, include_text: bool = False):
         # Join User to get owner name
         # We perform an outer join in case owner was deleted (though cascade should handle it)
         results = (
@@ -195,7 +195,7 @@ class TaskStore:
         
         tasks_data = []
         for task, full_name, username in results:
-            t_dict = task.to_dict()
+            t_dict = task.to_dict(include_text=include_text)
             t_dict["owner_name"] = full_name or username or "Desconhecido"
             tasks_data.append(t_dict)
         return tasks_data
@@ -243,3 +243,18 @@ class TaskStore:
                 stats["sem_conclusao"] += count
                 
         return stats
+
+    # Global Configuration
+    def get_global_config(self, key: str) -> str:
+        config = self.db.query(models.GlobalConfig).filter(models.GlobalConfig.key == key).first()
+        return config.value if config else None
+
+    def update_global_config(self, key: str, value: str):
+        config = self.db.query(models.GlobalConfig).filter(models.GlobalConfig.key == key).first()
+        if not config:
+            config = models.GlobalConfig(key=key, value=value)
+            self.db.add(config)
+        else:
+            config.value = value
+        self.db.commit()
+        return config.value

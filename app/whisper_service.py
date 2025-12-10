@@ -34,7 +34,8 @@ class WhisperService:
                 device=self.device, 
                 compute_type=self.compute_type,
                 # Enable Flash Attention 2 if on CUDA (requires matching compute capability, usually safe on 4060)
-                flash_attention=True if self.device == "cuda" else False,
+                # Disabled due to "not supported" error reported by user
+                flash_attention=False,
                 cpu_threads=4
             )
             logger.info("Whisper model loaded successfully.")

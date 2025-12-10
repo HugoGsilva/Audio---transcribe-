@@ -18,6 +18,11 @@ COPY . .
 
 # Create necessary directories for volumes
 RUN mkdir -p /app/uploads /app/data /root/.cache/whisper
+# Add local python package bin to PATH
+ENV PATH="$PATH:/root/.local/bin"
+
+# IMPORTANT: Add NVIDIA library paths to LD_LIBRARY_PATH for faster-whisper/ctranslate2
+ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib/python3.11/site-packages/nvidia/cublas/lib:/usr/local/lib/python3.11/site-packages/nvidia/cudnn/lib
 
 EXPOSE 8000
 

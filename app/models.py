@@ -23,9 +23,9 @@ class TranscriptionTask(Base):
     options = Column(Text, nullable=True)
     owner_id = Column(String, nullable=True) # ForeignKey to User.id (as string uuid)
 
-    def to_dict(self):
+    def to_dict(self, include_text=False):
         """Helper method to convert model to dictionary for API responses"""
-        return {
+        data = {
             "task_id": self.task_id,
             "status": self.status,
             "filename": self.filename,
@@ -39,8 +39,10 @@ class TranscriptionTask(Base):
             "processing_time": self.processing_time,
             "analysis_status": self.analysis_status or "Pendente de análise",
             "options": self.options
-            # omitting result_text for list views usually, but can be added if needed
         }
+        if include_text:
+            data['result_text'] = self.result_text or ""
+        return data
 
 class User(Base):
     __tablename__ = "users"
@@ -53,5 +55,11 @@ class User(Base):
     is_active = Column(String, default="False") # Boolean as string for simplicity in SQLite or use Boolean
     is_admin = Column(String, default="False")
     transcription_limit = Column(Integer, default=30)
+
+class GlobalConfig(Base):
+    __tablename__ = "global_config"
+
+    key = Column(String, primary_key=True)
+    value = Column(Text, nullable=True)
 
 

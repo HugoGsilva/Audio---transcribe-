@@ -8,9 +8,15 @@ import os
 import uuid
 from typing import List
 from sqlalchemy.orm import Session
-from datetime import timedelta
+from datetime import timedelta, datetime
 from pydantic import BaseModel
 import magic
+from typing import Optional
+
+class KeywordsUpdate(BaseModel):
+    keywords: Optional[str] = None
+    keywords_red: Optional[str] = None
+    keywords_green: Optional[str] = None
 
 from .database import engine, get_db, Base
 from . import models, crud, auth
@@ -99,11 +105,10 @@ async def startup_event():
     logger.info("Service starting up...")
     logger.info(f"Model: {settings.WHISPER_MODEL}, Device: {settings.DEVICE}")
     asyncio.create_task(cleanup_old_files())
-    # Start the queue consumer
-    asyncio.create_task(task_consumer())
-    logger.info("Service starting up...")
-    logger.info(f"Model: {settings.WHISPER_MODEL}, Device: {settings.DEVICE}")
-    asyncio.create_task(cleanup_old_files())
+    # Start the queue consumer (Parallelism: 5)
+    for i in range(5):
+        asyncio.create_task(task_consumer())
+        logger.info(f"Started task_consumer worker {i+1}")
     
     # Create Admin User with empty password
     db = next(get_db())
@@ -285,24 +290,9 @@ async def admin_change_password(user_id: str, payload: dict, db: Session = Depen
     if not new_password or len(new_password) < 4:
          raise HTTPException(status_code=400, detail="Senha muito curta")
          
-    hashed = auth.get_password_hash(new_password)
     task_store = crud.TaskStore(db)
     if task_store.update_user_password(user_id, hashed):
         return {"message": "Senha atualizada"}
-    raise HTTPException(status_code=404, detail="Usuário não encontrado")
-
-@app.post("/api/admin/user/{user_id}/limit")
-async def admin_set_limit(user_id: str, payload: dict, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
-    if current_user.is_admin != "True":
-        raise HTTPException(status_code=403, detail="Acesso exclusivo para administradores")
-        
-    limit = payload.get("limit")
-    if limit is None or not isinstance(limit, int) or limit < 0:
-         raise HTTPException(status_code=400, detail="Limite inválido")
-         
-    task_store = crud.TaskStore(db)
-    if task_store.update_user_limit(user_id, limit):
-        return {"message": "Limite atualizado"}
     raise HTTPException(status_code=404, detail="Usuário não encontrado")
 
 @app.delete("/api/admin/user/{user_id}")
@@ -631,6 +621,50 @@ async def clear_history(db: Session = Depends(get_db), current_user: models.User
     return {"deleted": deleted}
 
 
+@app.get("/api/export")
+async def export_csv(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    from fastapi.responses import StreamingResponse
+    import csv
+    import io
+    
+    task_store = crud.TaskStore(db)
+    
+    # Fetch Data
+    if current_user.is_admin == "True":
+        data = task_store.get_all_tasks_admin(include_text=True) # Returns list of dicts with owner_name
+    else:
+        # Re-use manual fetch logic for clean dicts
+        tasks = db.query(models.TranscriptionTask).filter(
+            models.TranscriptionTask.owner_id == current_user.id
+        ).order_by(models.TranscriptionTask.created_at.desc()).all()
+        data = [task.to_dict(include_text=True) for task in tasks]
+        # Add basic own name
+        for d in data: d['owner_name'] = current_user.full_name or current_user.username
+
+    # CSV Generation
+    output = io.StringIO()
+    # Write BOM for Excel UTF-8 compatibility
+    output.write('\ufeff')
+    
+    # Define columns - result_text MUST be last
+    fieldnames = ['task_id', 'filename', 'status', 'created_at', 'completed_at', 'duration', 'owner_name', 'analysis_status', 'result_text']
+    
+    writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction='ignore', delimiter=';')
+    writer.writeheader()
+    
+    for row in data:
+        # Sanitize text to remove potential interfering characters if needed, but quotes usually handle it
+        # However, newlines in Excel cells within ";" CSVs can be tricky. Quoting handles it.
+        writer.writerow(row)
+        
+    output.seek(0)
+    
+    filename = f"transcriptions_export_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.txt"
+    
+    response = StreamingResponse(iter([output.getvalue()]), media_type="text/plain; charset=utf-8")
+    response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+    return response
+
 @app.delete("/api/task/{task_id}")
 async def delete_task(task_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     task_store = crud.TaskStore(db)
@@ -643,6 +677,36 @@ async def delete_task(task_id: str, db: Session = Depends(get_db), current_user:
     if task_store.delete_task(task_id):
         return {"deleted": True}
     raise HTTPException(status_code=404, detail="Task not found")
+# Global Config Endpoints
+@app.get("/api/config/keywords")
+async def get_keywords(db: Session = Depends(get_db)):
+    task_store = crud.TaskStore(db)
+    kw_yellow = task_store.get_global_config("keywords")
+    kw_red = task_store.get_global_config("keywords_red")
+    kw_green = task_store.get_global_config("keywords_green")
+    
+    return {
+        "keywords": kw_yellow or "", 
+        "keywords_red": kw_red or "", 
+        "keywords_green": kw_green or ""
+    }
+
+@app.post("/api/admin/config/keywords")
+async def update_keywords(config: KeywordsUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    if current_user.is_admin != "True":
+        raise HTTPException(status_code=403, detail="Acesso exclusivo para administradores")
+        
+    task_store = crud.TaskStore(db)
+    
+    # Save each key if present
+    if config.keywords is not None:
+        task_store.update_global_config("keywords", config.keywords)
+    if config.keywords_red is not None:
+        task_store.update_global_config("keywords_red", config.keywords_red)
+    if config.keywords_green is not None:
+        task_store.update_global_config("keywords_green", config.keywords_green)
+        
+    return {"status": "updated"}
 
 # Error handling
 @app.exception_handler(Exception)

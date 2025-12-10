@@ -10,7 +10,7 @@
     <!-- Use Phosphor Icons for that futuristic look -->
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=2">
 </head>
 
 <body>
@@ -51,6 +51,10 @@
                 <a href="#" class="nav-item hidden" id="terminal-link">
                     <i class="ph ph-terminal-window"></i>
                     <span>Terminal</span>
+                </a>
+                <a href="#" class="nav-item" id="export-link">
+                    <i class="ph ph-export"></i>
+                    <span>Exportar</span>
                 </a>
             </nav>
 
@@ -98,12 +102,12 @@
                         style="margin-bottom: 24px; display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
                         <label
                             style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-muted); font-size: 0.9rem;">
-                            <input type="checkbox" id="opt-timestamp" checked style="accent-color: var(--primary);">
+                            <input type="checkbox" id="opt-timestamp" style="accent-color: var(--primary);">
                             Timestamps
                         </label>
                         <label
                             style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-muted); font-size: 0.9rem;">
-                            <input type="checkbox" id="opt-diarization" checked style="accent-color: var(--primary);">
+                            <input type="checkbox" id="opt-diarization" style="accent-color: var(--primary);">
                             Diferenciar Pessoas
                         </label>
                     </div>
@@ -144,7 +148,12 @@
                                 style="text-align:left; color:var(--text-muted); font-size:0.85rem; border-bottom:1px solid var(--border)">
                                 <th style="padding:12px; font-weight:500">Arquivo</th>
                                 <th style="padding:12px; font-weight:500">Data</th>
-                                <th style="padding:12px; font-weight:500">Duração</th>
+                                <th style="padding:12px; font-weight:500; cursor:pointer; user-select:none"
+                                    onclick="toggleSort('duration')">
+                                    Duração
+                                    <i id="sort-duration-icon" class="ph-bold ph-arrows-down-up"
+                                        style="font-size:0.9em; vertical-align:middle; margin-left:4px"></i>
+                                </th>
                                 <th style="padding:12px; font-weight:500">Status</th>
                                 <th style="padding:12px; font-weight:500">Ações</th>
                             </tr>
@@ -260,7 +269,7 @@
             </div>
     </div>
 
-    <script src="/static/script.js"></script>
+    <script src="/static/script.js?v=4"></script>
 </body>
 
 </html>
