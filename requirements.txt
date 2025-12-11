@@ -11,3 +11,17 @@ python-magic
 passlib[bcrypt]
 python-jose[cryptography]
 bcrypt==4.0.1
+# Diarization Dependencies
+torch
+torchaudio
+soundfile
+speechbrain
+huggingface-hub<0.25
+scikit-learn
+numpy
+requests
+# Audio Enhancement
+noisereduce
+pydub
+# AI Analysis
+sumy

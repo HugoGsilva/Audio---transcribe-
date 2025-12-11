@@ -8,9 +8,9 @@
     <link rel="icon"
         href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎙️</text></svg>">
     <!-- Use Phosphor Icons for that futuristic look -->
-    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@phosphor-icons/web"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=2">
 </head>
 
 <body>
@@ -47,6 +47,14 @@
                 <a href="#" class="nav-item hidden" id="admin-link">
                     <i class="ph ph-shield-check"></i>
                     <span>Admin</span>
+                </a>
+                <a href="#" class="nav-item hidden" id="terminal-link">
+                    <i class="ph ph-terminal-window"></i>
+                    <span>Terminal</span>
+                </a>
+                <a href="#" class="nav-item" id="export-link">
+                    <i class="ph ph-export"></i>
+                    <span>Exportar</span>
                 </a>
             </nav>
 
@@ -90,6 +98,14 @@
                     </div>
                     <h3 style="margin-bottom:8px; font-weight:600">Arraste seus arquivos</h3>
                     <p style="color:var(--text-muted); margin-bottom:24px">ou clique para selecionar</p>
+                    <div
+                        style="margin-bottom: 24px; display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
+                        <label
+                            style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-muted); font-size: 0.9rem;">
+                            <input type="checkbox" id="opt-timestamp" style="accent-color: var(--primary);">
+                            Timestamps
+                        </label>
+                    </div>
                     <button class="btn-primary btn-upload-trigger">
                         <i class="ph-bold ph-upload-simple"></i>
                         Selecionar Arquivos
@@ -127,7 +143,12 @@
                                 style="text-align:left; color:var(--text-muted); font-size:0.85rem; border-bottom:1px solid var(--border)">
                                 <th style="padding:12px; font-weight:500">Arquivo</th>
                                 <th style="padding:12px; font-weight:500">Data</th>
-                                <th style="padding:12px; font-weight:500">Duração</th>
+                                <th style="padding:12px; font-weight:500; cursor:pointer; user-select:none"
+                                    onclick="toggleSort('duration')">
+                                    Duração
+                                    <i id="sort-duration-icon" class="ph-bold ph-arrows-down-up"
+                                        style="font-size:0.9em; vertical-align:middle; margin-left:4px"></i>
+                                </th>
                                 <th style="padding:12px; font-weight:500">Status</th>
                                 <th style="padding:12px; font-weight:500">Ações</th>
                             </tr>
@@ -174,7 +195,25 @@
                             </div>
                         </div>
 
-                        <textarea id="result-text" class="result-textarea" readonly></textarea>
+                        <div class="tabs" style="margin-top:10px;">
+                            <button class="tab-btn active" onclick="switchResultTab('text', this)">Transcrição</button>
+                            <button class="tab-btn" onclick="switchResultTab('summary', this)">Resumo IA 🧠</button>
+                            <button class="tab-btn" onclick="switchResultTab('topics', this)">Tópicos 🏷️</button>
+                        </div>
+
+                        <div id="tab-content-text" class="tab-content active">
+                            <textarea id="result-text" class="result-textarea" readonly></textarea>
+                        </div>
+                        <div id="tab-content-summary" class="tab-content">
+                            <div id="result-summary" class="ai-content">
+                                <p style="color:var(--text-muted)">Gerando análise...</p>
+                            </div>
+                        </div>
+                        <div id="tab-content-topics" class="tab-content">
+                            <div id="result-topics" class="ai-content">
+                                <p style="color:var(--text-muted)">Extraindo tópicos...</p>
+                            </div>
+                        </div>
 
                         <div style="display:flex; justify-content:flex-end; gap:12px;">
                             <button class="action-btn" id="btn-copy-text" style="border:1px solid var(--border);">
@@ -227,9 +266,29 @@
             <div id="admin-view" class="hidden">
                 <!-- JS Populates this -->
             </div>
+
+            <!-- TERMINAL VIEW -->
+            <div id="terminal-view" class="hidden">
+                <div class="header-bar">
+                    <div class="page-title">
+                        <h1>Terminal do Servidor</h1>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:16px;">
+                        <button class="action-btn delete" onclick="adminClearCache()"
+                            style="border:1px solid var(--danger); background: var(--bg-card); color: var(--danger); font-size:0.8rem; padding: 6px 12px;">
+                            <i class="ph ph-trash"></i> Limpar Banco/Cache
+                        </button>
+                        <div style="font-size:0.8rem; color:var(--text-muted)">Auto-refresh (2s)</div>
+                    </div>
+                </div>
+                <div id="terminal-output"
+                    style="background:#0f172a; color:#10b981; padding:16px; border-radius:8px; font-family:monospace; height:600px; overflow-y:auto; white-space:pre-wrap; border:1px solid var(--border); font-size:0.85rem">
+                    Carregando logs...
+                </div>
+            </div>
     </div>
 
-    <script src="/static/script.js"></script>
+    <script src="/static/script.js?v=13"></script>
 </body>
 
 </html>

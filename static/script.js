@@ -62,6 +62,34 @@ document.addEventListener('DOMContentLoaded', () => {
     const dashboardView = document.getElementById('dashboard-view');
     const adminView = document.getElementById('admin-view');
     const reportView = document.getElementById('report-view');
+    const terminalView = document.getElementById('terminal-view');
+    const terminalLink = document.getElementById('terminal-link');
+    const exportLink = document.getElementById('export-link');
+
+    if (exportLink) {
+        exportLink.addEventListener('click', async (e) => {
+            e.preventDefault();
+            try {
+                const res = await authFetch('/api/export');
+                if (!res.ok) throw new Error('Falha ao exportar');
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                // Filename header is usually handled by browser or we can default
+                const contentDisp = res.headers.get('Content-Disposition');
+                let filename = 'transcricoes.txt';
+                if (contentDisp && contentDisp.includes('filename=')) {
+                    filename = contentDisp.split('filename=')[1].replace(/["']/g, "");
+                }
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+            } catch (err) { alert('Erro ao exportar TXT: ' + err.message); }
+        });
+    }
 
     // DOM Elements - Theme & Sidebar
     const themeToggle = document.getElementById('theme-toggle');
@@ -114,6 +142,10 @@ document.addEventListener('DOMContentLoaded', () => {
         updateNav(dashboardLink);
         adminView.classList.add('hidden');
         reportView.classList.add('hidden');
+        if (terminalView) terminalView.classList.add('hidden');
+        const f = document.getElementById('full-transcription-view');
+        if (f) f.classList.add('hidden');
+        if (window.currentAudio) window.currentAudio.pause();
         dashboardView.classList.remove('hidden');
         loadHistory();
         loadUserInfo();
@@ -125,6 +157,10 @@ document.addEventListener('DOMContentLoaded', () => {
         updateNav(reportLink);
         adminView.classList.add('hidden');
         dashboardView.classList.add('hidden');
+        if (terminalView) terminalView.classList.add('hidden');
+        const f = document.getElementById('full-transcription-view');
+        if (f) f.classList.add('hidden');
+        if (window.currentAudio) window.currentAudio.pause();
         reportView.classList.remove('hidden');
         await loadReports();
     }
@@ -134,6 +170,10 @@ document.addEventListener('DOMContentLoaded', () => {
         updateNav(adminLink);
         dashboardView.classList.add('hidden');
         reportView.classList.add('hidden');
+        if (terminalView) terminalView.classList.add('hidden');
+        const f = document.getElementById('full-transcription-view');
+        if (f) f.classList.add('hidden');
+        if (window.currentAudio) window.currentAudio.pause();
         adminView.classList.remove('hidden');
 
         if (!document.getElementById('pending-users-list')) {
@@ -144,14 +184,127 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="glass-card">
                     <h3>Usuários Pendentes</h3><div id="pending-users-list" style="margin-top:16px;">Carregando...</div>
                     <h3 style="margin-top:32px;">Todos os Usuários</h3><div id="all-users-list" style="margin-top:16px;">Carregando...</div>
+                </div>
+                
+                <div class="glass-card" style="margin-top:24px;">
+                    <h3>Configuração Global</h3>
+                    <div style="margin-top:16px;">
+                        <label style="display:block; font-weight:500; margin-bottom:4px;">Palavras-chave (Amarelo - Padrão)</label>
+                        <textarea id="admin-keywords" class="result-textarea" style="min-height:80px; height:80px; margin-bottom:12px;" placeholder="ex: atenção, verificar"></textarea>
+                        
+                        <label style="display:block; font-weight:500; margin-bottom:4px;">Palavras-chave (Vermelho - Crítico)</label>
+                        <textarea id="admin-keywords-red" class="result-textarea" style="min-height:80px; height:80px; margin-bottom:12px; border-color:var(--danger);" placeholder="ex: erro, falha, urgente"></textarea>
+                        
+                        <label style="display:block; font-weight:500; margin-bottom:4px;">Palavras-chave (Verde - Positivo)</label>
+                        <textarea id="admin-keywords-green" class="result-textarea" style="min-height:80px; height:80px; margin-bottom:12px; border-color:var(--success);" placeholder="ex: resolvido, aprovado"></textarea>
+
+                        <button class="btn-upload-trigger" onclick="saveKeywords()" style="margin-top:8px;">Salvar Todas</button>
+                        
+                        <hr style="margin: 24px 0; border: none; border-top: 1px solid var(--border);">
+                        
+                        <h4 style="margin-bottom:12px; color:var(--danger);">Zona de Perigo</h4>
+                        <button class="action-btn delete" onclick="adminClearCache()" style="border:1px solid var(--danger); background: var(--bg-card); color: var(--danger);">
+                            <i class="ph ph-trash"></i> Limpar Banco/Cache
+                        </button>
+                    </div>
                 </div>`;
         }
         loadAdminUsers();
+        loadAdminConfig();
+    }
+
+    async function loadAdminConfig() {
+        try {
+            const res = await authFetch('/api/config/keywords');
+            const data = await res.json();
+            const el = document.getElementById('admin-keywords');
+            const elRed = document.getElementById('admin-keywords-red');
+            const elGreen = document.getElementById('admin-keywords-green');
+
+            if (el) el.value = data.keywords || '';
+            if (elRed) elRed.value = data.keywords_red || '';
+            if (elGreen) elGreen.value = data.keywords_green || '';
+        } catch (e) { }
+    }
+
+    window.saveKeywords = async () => {
+        const val = document.getElementById('admin-keywords').value;
+        const valRed = document.getElementById('admin-keywords-red').value;
+        const valGreen = document.getElementById('admin-keywords-green').value;
+        try {
+            await authFetch('/api/admin/config/keywords', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ keywords: val, keywords_red: valRed, keywords_green: valGreen })
+            });
+            await loadKeywords(); // Wait for reload
+            showToast('Keywords salvas e atualizadas!', 'ph-check');
+        } catch (e) { alert('Erro ao salvar'); }
+    };
+
+    window.adminClearCache = async () => {
+        console.log("adminClearCache called");
+        if (!confirm('ATENÇÃO: Isso apagará TODO o histórico de transcrições do banco de dados.\n\nTem certeza absoluta?')) return;
+        try {
+            console.log("Sending clean request...");
+            await authFetch('/api/history/clear', { method: 'POST' });
+            showToast('Banco de dados limpo!', 'ph-trash');
+            if (typeof loadAdminUsers === 'function') loadAdminUsers();
+        } catch (e) {
+            console.error(e);
+            alert('Erro ao limpar cache: ' + e.message);
+        }
+    };
+
+    async function showTerminal(e) {
+        if (e) e.preventDefault();
+        updateNav(terminalLink);
+        dashboardView.classList.add('hidden');
+        adminView.classList.add('hidden');
+        reportView.classList.add('hidden');
+        if (terminalView) terminalView.classList.remove('hidden');
+        startTerminalPoll();
+    }
+
+    function formatDuration(seconds) {
+        if (!seconds) return '-';
+        const sec = Math.floor(seconds);
+        const h = Math.floor(sec / 3600);
+        const m = Math.floor((sec % 3600) / 60);
+        const s = sec % 60;
+        if (h > 0) return `${h}h ${m}m ${s}s`;
+        if (m > 0) return `${m}m ${s}s`;
+        return `${s}s`;
+    }
+
+    let terminalInterval = null;
+    function startTerminalPoll() {
+        if (terminalInterval) clearInterval(terminalInterval);
+        loadLogs();
+        terminalInterval = setInterval(loadLogs, 2000);
+    }
+
+    async function loadLogs() {
+        const tv = document.getElementById('terminal-view');
+        if (!tv || tv.classList.contains('hidden')) {
+            if (terminalInterval) clearInterval(terminalInterval);
+            return;
+        }
+        try {
+            const res = await authFetch('/api/logs?limit=200');
+            const data = await res.json();
+            const out = document.getElementById('terminal-output');
+            if (data.logs && out) {
+                out.textContent = data.logs.join('');
+                out.scrollTop = out.scrollHeight;
+            }
+        } catch (e) { }
     }
 
     // Nav Events
     if (dashboardLink) dashboardLink.addEventListener('click', showDashboard);
     if (reportLink) reportLink.addEventListener('click', showReports);
+    if (terminalLink) terminalLink.addEventListener('click', showTerminal);
     if (joinQldLink) joinQldLink.addEventListener('click', (e) => { e.preventDefault(); updateNav(joinQldLink); showToast('Funcionalidade em desenvolvimento', 'ph-wrench'); });
     if (joinCapLink) joinCapLink.addEventListener('click', (e) => { e.preventDefault(); updateNav(joinCapLink); showToast('Funcionalidade em desenvolvimento', 'ph-wrench'); });
 
@@ -159,6 +312,7 @@ document.addEventListener('DOMContentLoaded', () => {
         adminLink.classList.remove('hidden');
         adminLink.addEventListener('click', showAdminPanel);
     }
+    if (isAdmin && terminalLink) terminalLink.classList.remove('hidden');
 
     // Theme Logic
     const initTheme = () => {
@@ -222,30 +376,30 @@ document.addEventListener('DOMContentLoaded', () => {
         item.className = 'progress-item';
         const itemId = 'file-' + Math.random().toString(36).substr(2, 9);
         item.id = itemId;
+
+        // Compact Grid Structure: Name | Progress | Status
         item.innerHTML = `
-            <div style="font-weight:500; min-width:150px;">${escapeHtml(file.name)}</div>
+            <div class="progress-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</div>
             <div class="progress-bar-track">
                 <div class="progress-bar-fill" style="width: 0%"></div>
             </div>
-            <div class="console-logs" id="console-${itemId}"></div>
+            <div class="progress-status" id="status-${itemId}">Aguardando...</div>
         `;
         inprogressList.prepend(item);
 
         const formData = new FormData();
         formData.append('file', file);
+        // Options
+        const ts = document.getElementById('opt-timestamp');
+        const dr = document.getElementById('opt-diarization');
+        if (ts) formData.append('timestamp', ts.checked);
+        if (dr) formData.append('diarization', dr.checked);
         const bar = item.querySelector('.progress-bar-fill');
-        const consoleEl = item.querySelector(`#console-${itemId}`);
+        const statusEl = item.querySelector(`#status-${itemId}`);
 
         function addLog(msg) {
-            const line = document.createElement('div');
-            line.className = 'log-line active';
-            line.textContent = `> ${msg}`;
-            consoleEl.appendChild(line);
-            consoleEl.scrollTop = consoleEl.scrollHeight;
-            if (consoleEl.children.length > 2) {
-                // Keep active/opacity logic for last few lines
-                Array.from(consoleEl.children).slice(0, -1).forEach(c => c.classList.remove('active'));
-            }
+            // Update single line status instead of console logs
+            if (statusEl) statusEl.textContent = msg;
         }
         item.addLog = addLog;
 
@@ -297,15 +451,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (['processing', 'pending', 'queued'].includes(data.status)) {
                     bar.style.width = `${pct}%`;
                     if (data.status === 'queued') {
-                        if (item.addLog && processedPercent !== -1) {
-                            item.addLog('Na fila de processamento...');
-                            processedPercent = -1;
-                        }
-                    } else {
-                        if (item.addLog && pct > processedPercent && pct % 10 === 0) {
-                            item.addLog(`Processando... ${pct}%`);
-                            processedPercent = pct;
-                        }
+                        if (item.addLog) item.addLog('Na fila de processamento...');
+                    } else if (data.status === 'processing') {
+                        if (item.addLog) item.addLog(`Processando... ${pct}%`);
                     }
                 } else if (data.status === 'completed') {
                     clearInterval(interval);
@@ -314,6 +462,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         item.addLog('Concluído!');
                         item.addLog('Atualizando lista...');
                     }
+                    showNativeNotification('Processamento Concluído', 'Sua transcrição está pronta.');
                     setTimeout(() => {
                         item.remove();
                         if (inprogressList.children.length === 0) statusSection.classList.add('hidden');
@@ -330,18 +479,168 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- History Logic ---
+    const knownCompleted = new Set();
+
+    function formatDuration(seconds) {
+        if (!seconds || isNaN(seconds)) return "00m00s";
+        const m = Math.floor(seconds / 60);
+        const s = Math.floor(seconds % 60);
+        return `${m.toString().padStart(2, '0')}m${s.toString().padStart(2, '0')}s`;
+    }
+
+    function showNativeNotification(title, body) {
+        if (Notification.permission === 'granted') {
+            new Notification(title, { body, icon: '/static/favicon.ico' });
+        }
+    }
+
     let showingAllHistory = false;
+    // Sort State
+    window.sortState = { field: 'created_at', dir: 'desc' };
+
+    window.toggleSort = (field) => {
+        if (window.sortState.field === field) {
+            window.sortState.dir = window.sortState.dir === 'asc' ? 'desc' : 'asc';
+        } else {
+            window.sortState.field = field;
+            window.sortState.dir = 'desc';
+        }
+        // Update Icon
+        const icon = document.getElementById(`sort-${field}-icon`);
+        if (icon) {
+            icon.className = window.sortState.dir === 'asc' ? 'ph-bold ph-arrow-up' : 'ph-bold ph-arrow-down';
+        }
+        // Re-render
+        if (window.lastHistoryData) renderTable(window.lastHistoryData);
+    };
+
+    function renderTable(allData) {
+        if (!historyBody) return;
+        historyBody.innerHTML = '';
+
+        // Apply Filters
+        const fFile = document.getElementById('filter-file')?.value.toLowerCase();
+        const fDate = document.getElementById('filter-date')?.value;
+        const fStatus = document.getElementById('filter-status')?.value;
+
+        const filtered = allData.filter(task => {
+            if (fFile && !task.filename.toLowerCase().includes(fFile)) return false;
+            if (fDate && task.completed_at && !task.completed_at.startsWith(fDate)) return false;
+            if (fStatus) {
+                if (['completed', 'processing', 'failed'].includes(fStatus)) {
+                    if (task.status !== fStatus) return false;
+                } else {
+                    // Analysis status check
+                    if (task.status !== 'completed') return false;
+                    const analysis = task.analysis_status || 'Pendente de análise';
+                    if (analysis !== fStatus) return false;
+                }
+            }
+            return true;
+        });
+
+        if (filtered.length === 0) {
+            historyBody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:24px; color:var(--text-muted)">Nenhum resultado encontrado.</td></tr>';
+            return;
+        }
+
+        // Apply Sort
+        filtered.sort((a, b) => {
+            const field = window.sortState.field;
+            let valA = a[field];
+            let valB = b[field];
+
+            // Handle Duration specific
+            if (field === 'duration') {
+                valA = parseFloat(valA || 0);
+                valB = parseFloat(valB || 0);
+            }
+            // Handle Date
+            else if (field === 'created_at') {
+                valA = new Date(valA || 0).getTime();
+                valB = new Date(valB || 0).getTime();
+            }
+
+            if (window.sortState.dir === 'desc') {
+                return valA > valB ? -1 : 1;
+            } else {
+                return valA > valB ? 1 : -1;
+            }
+        });
+
+        filtered.forEach(task => {
+            const tr = document.createElement('tr');
+            let ownerCell = '';
+            if (showingAllHistory) ownerCell = `<td style="font-weight:600; color:var(--primary)">${escapeHtml(task.owner_name || 'N/A')}</td>`;
+
+            // Duration Display
+            let durationText = task.duration ? formatDuration(task.duration) : '-';
+
+            // Status & Actions
+            const analysis = task.analysis_status || 'Pendente de análise';
+            let statusHtml = '';
+            let actionsHtml = '';
+
+            if (task.status === 'completed') {
+                statusHtml = `<td>
+            <select class="status-select" onchange="updateStatus('${task.task_id}', this.value)" onclick="event.stopPropagation()">
+                <option value="Pendente de análise" ${analysis === 'Pendente de análise' ? 'selected' : ''}>Pendente</option>
+                <option value="Procedente" ${analysis === 'Procedente' ? 'selected' : ''}>Procedente</option>
+                <option value="Improcedente" ${analysis === 'Improcedente' ? 'selected' : ''}>Improcedente</option>
+                <option value="Sem conclusão" ${analysis === 'Sem conclusão' ? 'selected' : ''}>Indefinido</option>
+            </select>
+        </td>`;
+                actionsHtml = `
+            <button class="action-btn" title="Renomear" onclick="startRename(event, '${task.task_id}')"><i class="ph ph-pencil-simple"></i></button>
+            <button class="action-btn" title="Ver" onclick="viewResult('${task.task_id}')"><i class="ph ph-eye"></i></button>
+            <button class="action-btn delete" title="Excluir" onclick="deleteTask(event, '${task.task_id}')"><i class="ph ph-trash"></i></button>
+            <button class="action-btn" title="Baixar" onclick="downloadFile('${task.task_id}')"><i class="ph ph-download-simple"></i></button>
+        `;
+            } else if (task.status === 'failed') {
+                statusHtml = `<td><span style="color:var(--danger)">Falha</span></td>`;
+                actionsHtml = `<button class="action-btn delete" title="Excluir" onclick="deleteTask(event, '${task.task_id}')"><i class="ph ph-trash"></i></button>`;
+            } else {
+                statusHtml = `<td><span style="color:var(--primary)">Processando...</span></td>`;
+                actionsHtml = `<button class="action-btn delete" title="Cancelar" onclick="deleteTask(event, '${task.task_id}')"><i class="ph ph-trash"></i></button>`;
+            }
+
+            tr.innerHTML = `
+        ${ownerCell}
+        <td>
+            <div class="file-info" onclick="${task.status === 'completed' ? `viewResult('${task.task_id}')` : ''}">
+                <i class="ph-fill ph-file-audio file-icon"></i>
+                <span class="file-name-display" id="name-${task.task_id}">${escapeHtml(task.filename)}</span>
+                <div class="inline-edit-wrapper hidden" id="edit-${task.task_id}">
+                    <input type="text" class="inline-input" id="input-${task.task_id}" value="${escapeHtml(task.filename)}" onclick="event.stopPropagation()">
+                    <button class="action-btn" onclick="saveName(event, '${task.task_id}')"><i class="ph-bold ph-check" style="color:var(--success)"></i></button>
+                    <button class="action-btn" onclick="cancelName(event, '${task.task_id}')"><i class="ph-bold ph-x" style="color:var(--danger)"></i></button>
+                </div>
+            </div>
+        </td>
+        <td style="color:var(--text-muted); font-size:0.85rem">
+            ${task.completed_at ? new Date(task.completed_at).toLocaleString() : 'Em andamento'}
+        </td>
+        <td>${durationText}</td>
+        ${statusHtml}
+        <td><div style="display:flex; gap:4px;">${actionsHtml}</div></td>
+    `;
+            historyBody.appendChild(tr);
+        });
+    }
+
     async function loadHistory(showAll = false) {
         if (!historyBody) return;
         showingAllHistory = showAll;
         try {
-            const endpoint = showAll ? '/api/history?all=true' : '/api/history';
+            const endpoint = showAll ? `/api/history?all=true&t=${Date.now()}` : `/api/history?t=${Date.now()}`;
             const res = await authFetch(endpoint);
             const data = await res.json();
+            window.lastHistoryData = data;
 
             // Admin Toggle Button Logic
             const headerRow = document.querySelector('#history-table thead tr');
-            if (isAdmin) {
+            if (isAdmin && headerRow) {
+                // Owner Header
                 if (showAll && !document.getElementById('th-owner')) {
                     const th = document.createElement('th');
                     th.id = 'th-owner'; th.textContent = 'Usuário';
@@ -350,8 +649,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     document.getElementById('th-owner').remove();
                 }
 
+                // Toggle Button
                 const actionsArea = document.querySelector('.page-title');
-                if (!document.getElementById('btn-admin-toggle')) {
+                if (actionsArea && !document.getElementById('btn-admin-toggle')) {
                     const btn = document.createElement('button');
                     btn.id = 'btn-admin-toggle';
                     btn.className = 'btn-upload-trigger';
@@ -365,88 +665,62 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            historyBody.innerHTML = '';
-            if (data.length === 0) {
-                emptyState.classList.remove('hidden');
-                document.getElementById('history-table').classList.add('hidden');
-            } else {
-                emptyState.classList.add('hidden');
-                document.getElementById('history-table').classList.remove('hidden');
+            // HISTORY FILTERS
+            const thead = document.querySelector('#history-table thead');
+            if (headerRow && !document.getElementById('filter-row')) {
+                const filterRow = document.createElement('tr');
+                filterRow.id = 'filter-row';
+                filterRow.style.background = 'var(--bg-input)';
 
-                data.forEach(task => {
-                    const tr = document.createElement('tr');
-                    let ownerCell = '';
-                    if (showAll) ownerCell = `<td style="font-weight:600; color:var(--primary)">${escapeHtml(task.owner_name || 'N/A')}</td>`;
+                // Owner col spacer with filter if showAll
+                let ownerSpacer = isAdmin && showAll ? '<td><input type="text" id="filter-owner" placeholder="Filtrar usuário..." class="inline-input" style="width:100%"></td>' : '';
 
-                    // Processing Duration
-                    let durationText = '-';
-                    if (task.created_at && task.completed_at) {
-                        const start = new Date(task.created_at);
-                        const end = new Date(task.completed_at);
-                        const diffMs = end - start;
-                        if (diffMs > 0) {
-                            const diffSec = Math.floor(diffMs / 1000);
-                            if (diffSec < 60) durationText = `${diffSec}s`;
-                            else {
-                                const mins = Math.floor(diffSec / 60);
-                                const secs = diffSec % 60;
-                                durationText = `${mins}m ${secs}s`;
-                            }
-                        }
-                    }
+                filterRow.innerHTML = `
+            ${ownerSpacer}
+            <td>
+                <input type="text" id="filter-file" placeholder="Filtrar nome..." class="inline-input" style="width:100%">
+            </td>
+            <td style="padding:8px">
+                 <input type="date" id="filter-date" class="inline-input" style="width:100%">
+            </td>
+            <td style="padding:8px"></td> 
+            <td style="padding:8px">
+                <select id="filter-status" class="status-select" style="width:100%">
+                    <option value="">Todos</option>
+                    <option value="Pendente de análise">Análise Pendente</option>
+                    <option value="Procedente">Procedente</option>
+                    <option value="Improcedente">Improcedente</option>
+                    <option value="failed">Falha</option>
+                </select>
+            </td>
+            <td></td>
+        `;
+                thead.insertBefore(filterRow, headerRow.nextSibling);
 
-                    // Status & Actions
-                    const analysis = task.analysis_status || 'Pendente de análise';
-                    let statusHtml = '';
-                    let actionsHtml = '';
-
-                    if (task.status === 'completed') {
-                        statusHtml = `<td>
-                            <select class="status-select" onchange="updateStatus('${task.task_id}', this.value)" onclick="event.stopPropagation()">
-                                <option value="Pendente de análise" ${analysis === 'Pendente de análise' ? 'selected' : ''}>Pendente</option>
-                                <option value="Procedente" ${analysis === 'Procedente' ? 'selected' : ''}>Procedente</option>
-                                <option value="Improcedente" ${analysis === 'Improcedente' ? 'selected' : ''}>Improcedente</option>
-                                <option value="Sem conclusão" ${analysis === 'Sem conclusão' ? 'selected' : ''}>Indefinido</option>
-                            </select>
-                        </td>`;
-                        actionsHtml = `
-                            <button class="action-btn" title="Renomear" onclick="startRename(event, '${task.task_id}')"><i class="ph ph-pencil-simple"></i></button>
-                            <button class="action-btn" title="Ver" onclick="viewResult('${task.task_id}')"><i class="ph ph-eye"></i></button>
-                            <button class="action-btn delete" title="Excluir" onclick="deleteTask(event, '${task.task_id}')"><i class="ph ph-trash"></i></button>
-                            <button class="action-btn" title="Baixar" onclick="downloadFile('${task.task_id}')"><i class="ph ph-download-simple"></i></button>
-                        `;
-                    } else if (task.status === 'failed') {
-                        statusHtml = `<td><span style="color:var(--danger)">Falha</span></td>`;
-                        actionsHtml = `<button class="action-btn delete" title="Excluir" onclick="deleteTask(event, '${task.task_id}')"><i class="ph ph-trash"></i></button>`;
-                    } else {
-                        statusHtml = `<td><span style="color:var(--primary)">Processando...</span></td>`;
-                        actionsHtml = `<button class="action-btn delete" title="Cancelar" onclick="deleteTask(event, '${task.task_id}')"><i class="ph ph-trash"></i></button>`;
-                    }
-
-                    tr.innerHTML = `
-                        ${ownerCell}
-                        <td>
-                            <div class="file-info" onclick="${task.status === 'completed' ? `viewResult('${task.task_id}')` : ''}">
-                                <i class="ph-fill ph-file-audio file-icon"></i>
-                                <span class="file-name-display" id="name-${task.task_id}">${escapeHtml(task.filename)}</span>
-                                <div class="inline-edit-wrapper hidden" id="edit-${task.task_id}">
-                                    <input type="text" class="inline-input" id="input-${task.task_id}" value="${escapeHtml(task.filename)}" onclick="event.stopPropagation()">
-                                    <button class="action-btn" onclick="saveName(event, '${task.task_id}')"><i class="ph-bold ph-check" style="color:var(--success)"></i></button>
-                                    <button class="action-btn" onclick="cancelName(event, '${task.task_id}')"><i class="ph-bold ph-x" style="color:var(--danger)"></i></button>
-                                </div>
-                            </div>
-                        </td>
-                        <td style="color:var(--text-muted); font-size:0.85rem">
-                            ${task.completed_at ? new Date(task.completed_at).toLocaleString() : 'Em andamento'}
-                            ${task.completed_at ? `<div style="font-size:0.75rem; opacity:0.7">Processado em: ${durationText}</div>` : ''}
-                        </td>
-                        <td>${task.duration ? task.duration.toFixed(1) + 's' : '-'}</td>
-                        ${statusHtml}
-                        <td><div style="display:flex; gap:4px;">${actionsHtml}</div></td>
-                    `;
-                    historyBody.appendChild(tr);
+                // Add Listeners
+                ['filter-owner', 'filter-file', 'filter-date', 'filter-status'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.addEventListener('input', () => {
+                        if (window.lastHistoryData) renderTable(window.lastHistoryData);
+                    });
                 });
+            } else {
+                // Adjust filter row spacer if needed
+                const filterRow = document.getElementById('filter-row');
+                if (filterRow && isAdmin) {
+                    if (showAll && filterRow.cells.length === 5) { // Assuming 5 cols originally
+                        const td = document.createElement('td');
+                        td.innerHTML = '<input type="text" id="filter-owner" placeholder="Filtrar usuário..." class="inline-input" style="width:100%">';
+                        td.querySelector('input').addEventListener('input', () => { if (window.lastHistoryData) renderTable(window.lastHistoryData); });
+                        filterRow.insertBefore(td, filterRow.firstChild);
+                    } else if (!showAll && filterRow.cells.length > 5 && filterRow.firstChild.querySelector('#filter-owner')) {
+                        filterRow.removeChild(filterRow.firstChild);
+                    }
+                }
             }
+
+            renderTable(data);
+
         } catch (e) { console.error(e); }
     }
 
@@ -593,59 +867,255 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
 
+    // --- Result View & Player ---
+
+    // NEW: Load Keywords
+    let globalKeywords = { yellow: [], red: [], green: [] };
+    async function loadKeywords() {
+        try {
+            const res = await authFetch(`/api/config/keywords?t=${Date.now()}`); // bust cache
+            if (res.ok) {
+                const data = await res.json();
+                const split = (s) => (s || '').split(',').map(k => k.trim()).filter(k => k);
+                globalKeywords.yellow = split(data.keywords);
+                globalKeywords.red = split(data.keywords_red);
+                globalKeywords.green = split(data.keywords_green);
+            }
+        } catch (e) { }
+    }
+    loadKeywords();
+
     window.viewResult = async (id) => {
         try {
             const res = await authFetch(`/api/result/${id}`);
             if (!res.ok) throw new Error('Falha ao buscar');
             const data = await res.json();
 
-            resultText.value = data.text || 'Sem transcrição.';
-
-            // Metadata: File Name, Duration, Task ID
-            resultMeta.innerHTML = `
-                <div class="meta-grid">
-                    <div class="meta-item">
-                        <span class="meta-label">Arquivo</span>
-                        <div class="meta-value" title="${escapeHtml(data.filename)}"><i class="ph ph-file-audio"></i> ${escapeHtml(data.filename)}</div>
+            // Toggle Views
+            dashboardView.classList.add('hidden');
+            let fullView = document.getElementById('full-transcription-view');
+            if (!fullView) {
+                // Create if not exists
+                fullView = document.createElement('div');
+                fullView.id = 'full-transcription-view';
+                fullView.innerHTML = `
+                <div class="header-bar">
+                    <div style="display:flex; align-items:center; gap:16px;">
+                        <button class="action-btn" onclick="closeFullView()" style="font-size:1.1rem; padding:8px 16px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px;">
+                            <i class="ph-bold ph-arrow-left"></i> Voltar
+                        </button>
+                        <div class="page-title"><h1 style="font-size:1.5rem">Transcrição</h1></div>
                     </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Duração</span>
-                        <div class="meta-value"><i class="ph ph-clock"></i> ${data.duration ? data.duration.toFixed(2) + 's' : '-'}</div>
+                </div>
+                
+                <div class="glass-card" style="margin-bottom:24px; display:flex; gap:32px; flex-wrap:wrap; align-items:center;" id="full-meta">
+                    <div>
+                        <span style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:4px;">ARQUIVO</span>
+                        <div style="font-weight:600; display:flex; align-items:center; gap:8px;">
+                            <i class="ph-fill ph-file-audio" style="color:var(--primary)"></i> ${escapeHtml(data.filename)}
+                        </div>
                     </div>
-                    <div class="meta-item" style="cursor:pointer;" onclick="event.stopPropagation(); copyToClipboard('${id}')" title="Clique para copiar ID">
-                        <span class="meta-label">Task ID</span>
-                        <div class="meta-value"><i class="ph ph-hash"></i> ${id} <i class="ph-bold ph-copy" style="font-size:0.8em; margin-left:4px"></i></div>
+                    <div>
+                        <span style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:4px;">DURAÇÃO</span>
+                        <div style="font-weight:600;">${formatDuration(data.duration)}</div>
                     </div>
-                </div>`;
+                    <div>
+                         <span style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:4px;">DATA</span>
+                         <div style="font-weight:600;">${new Date(data.completed_at).toLocaleString()}</div>
+                    </div>
+                    <div>
+                         <span style="display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:4px;">TASK ID</span>
+                         <div style="font-family:monospace; font-size:0.9rem; opacity:0.8;">${id}</div>
+                    </div>
+                </div>
 
-            if (btnDownload) btnDownload.onclick = () => window.downloadFile(id);
-            if (btnDownloadAudio) btnDownloadAudio.onclick = () => window.downloadAudio(id);
+                <!-- Audio Player Container -->
+                <div id="full-player-container" class="glass-card hidden" style="margin-bottom:24px; display:flex; align-items:center; gap:16px; padding:16px;">
+                    <button class="player-btn" id="full-play-btn"><i class="ph-fill ph-play"></i></button>
+                    <span id="full-curr-time" style="font-family:monospace; font-size:0.9rem">0:00</span>
+                    <div style="flex:1; height:6px; background:var(--bg); border-radius:3px; cursor:pointer; position:relative;" id="full-seek">
+                         <div id="full-seek-fill" style="height:100%; width:0%; background:var(--primary); border-radius:3px; pointer-events:none;"></div>
+                    </div>
+                    <span id="full-dur-time" style="font-family:monospace; font-size:0.9rem">0:00</span>
+                    <i class="ph ph-speaker-high" id="full-vol-icon" style="cursor:pointer"></i>
+                </div>
 
-            // Setup Player
-            if (audioPlayerContainer && audioEl) {
-                audioEl.pause();
-                audioEl.src = "";
-                audioPlayerContainer.classList.add('hidden');
+                <div class="glass-card" style="min-height:500px;">
+                    <div style="display:flex; justify-content:flex-end; gap:8px; margin-bottom:16px;">
+                        <button class="action-btn" onclick="copyToClipboard('${id}')"><i class="ph ph-copy"></i> Copiar Texto</button>
+                        <button class="action-btn" onclick="window.downloadFile('${id}')"><i class="ph ph-file-text"></i> Baixar Texto</button>
+                        <button class="action-btn" onclick="window.downloadAudio('${id}')"><i class="ph ph-file-audio"></i> Baixar Áudio</button>
+                        <button class="action-btn delete" onclick="deleteTaskFromView(event, '${id}')"><i class="ph ph-trash"></i> Excluir</button>
+                    </div>
 
-                try {
-                    const aRes = await authFetch(`/api/audio/${id}`);
-                    if (aRes.ok) {
-                        const blob = await aRes.blob();
-                        if (blob.size > 0) {
-                            const url = URL.createObjectURL(blob);
-                            audioEl.src = url;
-                            audioPlayerContainer.classList.remove('hidden');
-                        }
-                    } else {
-                        console.warn("Audio fetch failed status:", aRes.status);
-                    }
-                } catch (e) { console.warn("Audio error", e); }
+                    <div class="tabs">
+                        <button class="tab-btn active" onclick="switchResultTab('text', this)">Transcrição</button>
+                        <button class="tab-btn" onclick="switchResultTab('summary', this)">Resumo IA 🧠</button>
+                        <button class="tab-btn" onclick="switchResultTab('topics', this)">Tópicos 🏷️</button>
+                    </div>
+
+                    <div id="tab-content-text" class="tab-content active">
+                        <div id="full-content" class="chat-container"></div>
+                    </div>
+                    <div id="tab-content-summary" class="tab-content">
+                        <div id="result-summary" class="ai-content" style="white-space: pre-wrap;"></div>
+                    </div>
+                    <div id="tab-content-topics" class="tab-content">
+                        <div id="result-topics" class="ai-content"></div>
+                    </div>
+                </div>
+            `;
+                document.querySelector('.main-content').appendChild(fullView);
             }
-            if (resultModal) resultModal.style.display = 'grid';
+            fullView.classList.remove('hidden');
+
+            // Populate AI Data
+            const summaryDiv = document.getElementById('result-summary');
+            if (summaryDiv) summaryDiv.textContent = data.summary || "Resumo não disponível. A análise pode ter falhado ou o texto é muito curto.";
+
+            const topicsDiv = document.getElementById('result-topics');
+            if (topicsDiv) {
+                if (data.topics) {
+                    const tags = data.topics.split(',').map(t => `<span class="ai-topic-tag">${escapeHtml(t.trim())}</span>`).join('');
+                    topicsDiv.innerHTML = tags;
+                } else {
+                    topicsDiv.textContent = "Tópicos não disponíveis.";
+                }
+            }
+
+            // Bind player events
+            const playerCont = document.getElementById('full-player-container');
+            const playBtn = document.getElementById('full-play-btn');
+            const seek = document.getElementById('full-seek');
+            const seekFill = document.getElementById('full-seek-fill');
+            const curr = document.getElementById('full-curr-time');
+            const dur = document.getElementById('full-dur-time');
+
+            // Reset
+            if (window.currentAudio) { window.currentAudio.pause(); }
+            window.currentAudio = new Audio();
+            playerCont.classList.add('hidden');
+
+            try {
+                const aRes = await authFetch(`/api/audio/${id}`);
+                if (aRes.ok) {
+                    const blob = await aRes.blob();
+                    if (blob.size > 0) {
+                        const url = URL.createObjectURL(blob);
+                        window.currentAudio.src = url;
+                        playerCont.classList.remove('hidden');
+
+                        // Events
+                        playBtn.onclick = () => {
+                            if (window.currentAudio.paused) window.currentAudio.play();
+                            else window.currentAudio.pause();
+                        };
+                        window.currentAudio.onplay = () => playBtn.innerHTML = '<i class="ph-fill ph-pause"></i>';
+                        window.currentAudio.onpause = () => playBtn.innerHTML = '<i class="ph-fill ph-play"></i>';
+                        window.currentAudio.ontimeupdate = () => {
+                            const pct = (window.currentAudio.currentTime / window.currentAudio.duration) * 100;
+                            seekFill.style.width = `${pct}%`;
+                            curr.textContent = formatTime(window.currentAudio.currentTime);
+                        };
+                        window.currentAudio.onloadedmetadata = () => {
+                            dur.textContent = formatTime(window.currentAudio.duration);
+                        };
+                    }
+                }
+            } catch (e) {
+                console.log('Audio error:', e);
+            }
+
+            // Content Generation with Highlights
+            const contentDiv = document.getElementById('full-content');
+            contentDiv.innerHTML = '';
+
+            const lines = (data.text || '').split('\\n');
+
+            // Helper to highlight
+            function highlightText(text) {
+                if (!text) return '';
+
+                // create a map of lowercased keyword -> class
+                const map = {};
+                const add = (list, cls) => {
+                    if (!list) return;
+                    list.forEach(k => {
+                        const low = k.toLowerCase();
+                        if (!map[low]) map[low] = cls;
+                    });
+                };
+
+                // Priority: Red > Green > Yellow
+                add(globalKeywords.red, 'keyword-highlight-red');
+                add(globalKeywords.green, 'keyword-highlight-green');
+                add(globalKeywords.yellow, 'keyword-highlight');
+
+                const keywords = Object.keys(map);
+                if (keywords.length === 0) return escapeHtml(text);
+
+                // Sort by length desc
+                keywords.sort((a, b) => b.length - a.length);
+
+                // Escape keywords for regex
+                const escaped = keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+                const pattern = new RegExp(`(${escaped.join('|')})`, 'gi');
+
+                // Split and map
+                const parts = text.split(pattern);
+
+                return parts.map(part => {
+                    const low = part.toLowerCase();
+                    if (map[low]) {
+                        return `<mark class="${map[low]}">${escapeHtml(part)}</mark>`;
+                    } else {
+                        return escapeHtml(part);
+                    }
+                }).join('');
+            }
+
+            if (!data.text) {
+                contentDiv.innerHTML = '<div style="padding:40px; text-align:center; color:var(--text-muted)">Sem texto disponível</div>';
+            } else {
+                lines.forEach(line => {
+
+                    const match = line.match(/^\[(\d{2}:\d{2})\]\s*(?:\[(.*?)\]:\s*)?(.*)/);
+                    if (match) {
+                        const time = match[1];
+                        const speaker = match[2] || '?';
+                        const text = match[3];
+
+                        const msg = document.createElement('div');
+                        let side = 'left';
+                        if (speaker.toLowerCase().includes('pessoa 2') || speaker.toLowerCase().includes('cliente')) side = 'right';
+
+                        msg.className = `chat-msg ${side}`;
+                        msg.innerHTML = `
+                    <div class="chat-bubble">${highlightText(text)}</div>
+                        <div class="chat-info">${time} • ${escapeHtml(speaker)}</div>
+                `;
+                        contentDiv.appendChild(msg);
+                    } else if (line.trim()) {
+                        const msg = document.createElement('div');
+                        msg.className = 'chat-msg left';
+                        msg.innerHTML = `<div class="chat-bubble">${highlightText(line)}</div>`;
+                        contentDiv.appendChild(msg);
+                    }
+                });
+            }
+
         } catch (e) {
             console.error(e);
-            alert('Erro ao abrir resultado');
+            alert('Erro ao abrir visualização');
         }
+    };
+
+    window.closeFullView = () => {
+        const full = document.getElementById('full-transcription-view');
+        if (full) full.classList.add('hidden');
+        if (window.currentAudio) { window.currentAudio.pause(); }
+        // Return to dashboard
+        showDashboard();
     };
 
     if (btnCloseModal) {
@@ -720,10 +1190,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div style="font-size:0.8rem; color:var(--text-muted)">${escapeHtml(u.full_name)} • ${u.usage}/${u.transcription_limit || 100}</div>
                     </div>
                     <div style="display:flex; gap:8px; align-items:center;">
-                         <span style="font-size:0.8rem; padding:2px 8px; border-radius:12px; background:${active ? 'var(--success)' : 'var(--warning)'}; color:white">${active ? 'Ativo' : 'Pendente'}</span>
-                         <button class="action-btn" onclick="toggleAdmin('${u.id}', ${u.is_admin === 'True'})"><i class="ph ${u.is_admin === 'True' ? 'ph-shield-slash' : 'ph-shield-check'}"></i></button>
-                         <button class="action-btn" onclick="changeLimit('${u.id}', ${u.transcription_limit || 100})"><i class="ph ph-faders"></i></button>
-                         <button class="action-btn delete" onclick="deleteUser('${u.id}')"><i class="ph ph-trash"></i></button>
+                        <span style="font-size:0.8rem; padding:2px 8px; border-radius:12px; background:${active ? 'var(--success)' : 'var(--warning)'}; color:white">${active ? 'Ativo' : 'Pendente'}</span>
+                        <button class="action-btn" onclick="toggleAdmin('${u.id}', ${u.is_admin === 'True'})"><i class="ph ${u.is_admin === 'True' ? 'ph-shield-slash' : 'ph-shield-check'}"></i></button>
+                        <button class="action-btn" onclick="changeLimit('${u.id}', ${u.transcription_limit || 100})"><i class="ph ph-faders"></i></button>
+                        <button class="action-btn delete" onclick="deleteUser('${u.id}')"><i class="ph ph-trash"></i></button>
                     </div>
                 `;
                 aList.appendChild(row);
@@ -733,12 +1203,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     const pRow = document.createElement('div');
                     pRow.style.cssText = 'padding:12px; border:1px solid var(--border); margin-bottom:8px; display:flex; justify-content:space-between; background:var(--bg-card); border-radius:8px';
                     pRow.innerHTML = `
-                        <strong>${escapeHtml(u.username)}</strong>
+                    <strong>${escapeHtml(u.username)}</strong>
                         <div style="display:flex; gap:8px;">
                             <button class="action-btn" style="background:var(--success); color:white; border-radius:4px; padding:4px 8px" onclick="approveUser('${u.id}')">Aprovar</button>
                             <button class="action-btn delete" onclick="deleteUser('${u.id}')"><i class="ph ph-trash"></i></button>
                         </div>
-                    `;
+                `;
                     pList.appendChild(pRow);
                 }
             });
@@ -776,7 +1246,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await authFetch('/api/user/info');
             const data = await res.json();
             if (usageDisplay) {
-                if (data.limit === 0) {
+                if (data.limit === 0 || data.is_admin === "True") {
                     usageDisplay.textContent = `${data.usage} / ∞`;
                     usageDisplay.style.color = 'var(--success)';
                 } else {
@@ -789,6 +1259,40 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Initial Load
+    Notification.requestPermission();
     loadHistory();
     loadUserInfo();
+    window.deleteTask = async (e, id) => {
+        if (e) e.stopPropagation();
+        if (!confirm('Excluir esta transcrição?')) return;
+        try {
+            await authFetch(`/api/task/${id}`, { method: 'DELETE' });
+            loadHistory(showingAllHistory);
+            loadUserInfo();
+        } catch (e) { alert('Erro ao excluir'); }
+    };
+
+    window.deleteTaskFromView = async (e, id) => {
+        if (!confirm('Excluir esta transcrição?')) return;
+        try {
+            await authFetch(`/api/task/${id}`, { method: 'DELETE' });
+            closeFullView();
+            loadHistory(showingAllHistory);
+            loadUserInfo();
+        } catch (e) { alert('Erro ao excluir'); }
+    };
+
+    // --- UI Helpers ---
+    window.switchResultTab = (tabName, btn) => {
+        const parent = btn.closest('.glass-card') || document;
+        // Buttons
+        parent.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+        btn.classList.add('active');
+
+        // Content
+        parent.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+        const target = parent.querySelector(`#tab-content-${tabName}`);
+        if (target) target.classList.add('active');
+    };
+
 });

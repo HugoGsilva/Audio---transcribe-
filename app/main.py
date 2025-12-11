@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, BackgroundTasks, status
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, BackgroundTasks, status
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,9 +8,15 @@ import os
 import uuid
 from typing import List
 from sqlalchemy.orm import Session
-from datetime import timedelta
+from datetime import timedelta, datetime
 from pydantic import BaseModel
 import magic
+from typing import Optional
+
+class KeywordsUpdate(BaseModel):
+    keywords: Optional[str] = None
+    keywords_red: Optional[str] = None
+    keywords_green: Optional[str] = None
 
 from .database import engine, get_db, Base
 from . import models, crud, auth
@@ -60,7 +66,14 @@ task_queue: asyncio.Queue = asyncio.Queue()
 async def task_consumer():
     from .database import SessionLocal
     while True:
-        task_id, file_path = await task_queue.get()
+        item = await task_queue.get()
+        if len(item) == 3:
+            task_id, file_path, options = item
+        else:
+             # Backward compatibility or simple tuple
+             task_id, file_path = item
+             options = {}
+             
         db = SessionLocal()
         task_store = crud.TaskStore(db)
         
@@ -78,7 +91,7 @@ async def task_consumer():
         try:
             # Run blocking transcription in a separate thread
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, process_transcription, task_id, file_path)
+            await loop.run_in_executor(None, process_transcription, task_id, file_path, options)
             
             task_store.update_progress(task_id, 100)
         except Exception:
@@ -90,13 +103,33 @@ async def task_consumer():
 @app.on_event("startup")
 async def startup_event():
     logger.info("Service starting up...")
+    
+    # DB Migration Check for new Analysis columns
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            # Add summary column if not exists
+            try:
+                conn.execute(text("ALTER TABLE transcription_tasks ADD COLUMN summary TEXT"))
+                logger.info("Migrated DB: Added summary column")
+            except Exception:
+                pass # Column likely exists
+            
+            # Add topics column if not exists
+            try:
+                conn.execute(text("ALTER TABLE transcription_tasks ADD COLUMN topics TEXT"))
+                logger.info("Migrated DB: Added topics column")
+            except Exception:
+                pass # Column likely exists
+    except Exception as e:
+        logger.warning(f"DB Migration check skipped: {e}")
+
     logger.info(f"Model: {settings.WHISPER_MODEL}, Device: {settings.DEVICE}")
     asyncio.create_task(cleanup_old_files())
-    # Start the queue consumer
-    asyncio.create_task(task_consumer())
-    logger.info("Service starting up...")
-    logger.info(f"Model: {settings.WHISPER_MODEL}, Device: {settings.DEVICE}")
-    asyncio.create_task(cleanup_old_files())
+    # Start the queue consumer (Parallelism: 1 - Sequential to prevent OOM/Race)
+    for i in range(1):
+        asyncio.create_task(task_consumer())
+        logger.info(f"Started task_consumer worker {i+1}")
     
     # Create Admin User with empty password
     db = next(get_db())
@@ -112,7 +145,19 @@ async def startup_event():
         )
         db.add(new_user)
         db.commit()
+        db.commit()
         logger.info("Created Admin user with empty password")
+    
+    # Auto-migration: Add 'options' column if not exists
+    try:
+        from sqlalchemy import text
+        db.execute(text("ALTER TABLE transcription_tasks ADD COLUMN options TEXT"))
+        db.commit()
+        logger.info("Migration: Added 'options' column.")
+    except Exception as e:
+        # Column likely exists
+        # logger.info(f"Migration skip: {e}")
+        db.rollback()
     
     # Cleanup: Cancel and delete all pending/processing tasks on startup
     # This ensures a clean slate as requested
@@ -206,6 +251,26 @@ async def register(user: RegisterModel, db: Session = Depends(get_db)):
 
 
 # Admin Endpoints
+@app.get("/api/logs")
+async def get_logs(limit: int = 100, current_user: models.User = Depends(auth.get_current_user)):
+    """Get application logs from file"""
+    if current_user.is_admin != "True":
+        raise HTTPException(status_code=403, detail="Acesso restrito ao Administrador")
+    
+    log_file = "/app/data/app.log"
+    if not os.path.exists(log_file):
+        return {"logs": ["Log file not found."]}
+        
+    try:
+        # Efficiently read last N lines (simple consistency)
+        with open(log_file, "r", encoding="utf-8", errors='ignore') as f:
+            # Read all is okay for small logs, but for large...
+            # A simple approach for < 10MB logs
+            lines = f.readlines()
+            return {"logs": lines[-limit:]}
+    except Exception as e:
+        return {"logs": [f"Error reading logs: {str(e)}"]}
+
 @app.get("/api/admin/users")
 async def get_all_users(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     if current_user.is_admin != "True":
@@ -246,24 +311,9 @@ async def admin_change_password(user_id: str, payload: dict, db: Session = Depen
     if not new_password or len(new_password) < 4:
          raise HTTPException(status_code=400, detail="Senha muito curta")
          
-    hashed = auth.get_password_hash(new_password)
     task_store = crud.TaskStore(db)
     if task_store.update_user_password(user_id, hashed):
         return {"message": "Senha atualizada"}
-    raise HTTPException(status_code=404, detail="Usuário não encontrado")
-
-@app.post("/api/admin/user/{user_id}/limit")
-async def admin_set_limit(user_id: str, payload: dict, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
-    if current_user.is_admin != "True":
-        raise HTTPException(status_code=403, detail="Acesso exclusivo para administradores")
-        
-    limit = payload.get("limit")
-    if limit is None or not isinstance(limit, int) or limit < 0:
-         raise HTTPException(status_code=400, detail="Limite inválido")
-         
-    task_store = crud.TaskStore(db)
-    if task_store.update_user_limit(user_id, limit):
-        return {"message": "Limite atualizado"}
     raise HTTPException(status_code=404, detail="Usuário não encontrado")
 
 @app.delete("/api/admin/user/{user_id}")
@@ -288,6 +338,7 @@ async def get_user_info(db: Session = Depends(get_db), current_user: models.User
     
     return {
         "username": current_user.username,
+        "is_admin": current_user.is_admin,
         "usage": usage,
         "limit": limit
     }
@@ -307,7 +358,7 @@ async def toggle_admin_status(user_id: str, db: Session = Depends(get_db), curre
 
 
 
-def process_transcription(task_id: str, file_path: str):
+def process_transcription(task_id: str, file_path: str, options: dict = {}):
     from .database import SessionLocal
     background_db = SessionLocal()
     task_store = crud.TaskStore(background_db)
@@ -317,36 +368,36 @@ def process_transcription(task_id: str, file_path: str):
         task_store.update_status(task_id, "processing")
         
         start_ts = perf_counter()
-        result = whisper_service.transcribe(file_path)
+        result = whisper_service.transcribe(file_path, options=options)
         processing_time = perf_counter() - start_ts
-
+        
+        # Save Result
         task_store.save_result(
-            task_id, 
-            text=result["text"], 
-            language=result["language"], 
-            duration=result["duration"],
-            processing_time=processing_time
+            task_id=task_id,
+            text=result.get("text", ""),
+            language=result.get("language", "unknown"),
+            duration=result.get("duration", 0.0),
+            processing_time=processing_time,
+            summary=result.get("summary"),
+            topics=result.get("topics")
         )
         logger.info(f"Task {task_id} completed successfully.")
-        
+
     except Exception as e:
         logger.error(f"Task {task_id} failed: {e}")
         task_store.update_status(task_id, "failed", error_message=str(e))
     finally:
         background_db.close()
-        # Do not delete file so it can be played/downloaded later
-        # if os.path.exists(file_path):
-        #     try:
-        #         os.remove(file_path)
-        #     except Exception as e:
-        #         logger.warning(f"Error removing file {file_path}: {e}") 
+        # Do not delete file so it can be played/downloaded later 
 
 @app.post("/api/upload")
 async def upload_audio(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(auth.get_current_user)
+    current_user: models.User = Depends(auth.get_current_user),
+    timestamp: bool = Form(True),
+    diarization: bool = Form(True)
 ):
     task_store = crud.TaskStore(db)
     
@@ -384,14 +435,16 @@ async def upload_audio(
          raise HTTPException(status_code=500, detail=f"Falha ao salvar arquivo: {str(e)}")
 
     # 3. Create task in DB
+    options = {"timestamp": timestamp, "diarization": diarization}
     task = task_store.create_task(
         filename=file.filename,
         file_path=file_path,
-        owner_id=current_user.id
+        owner_id=current_user.id,
+        options=options
     )
     
-    # 4. Enqueue task for sequential processing
-    await task_queue.put((task.task_id, file_path))
+    # 4. Enqueue task for sequential processing with options
+    await task_queue.put((task.task_id, file_path, options))
     
     return {
         "task_id": task.task_id,
@@ -456,7 +509,9 @@ async def get_result(task_id: str, db: Session = Depends(get_db), current_user: 
         "duration": task.duration,
         "processing_time": task.processing_time,
         "filename": task.filename,
-        "completed_at": task.completed_at
+        "completed_at": task.completed_at,
+        "summary": task.summary,
+        "topics": task.topics
     }
 
 @app.get("/api/download/{task_id}")
@@ -587,6 +642,50 @@ async def clear_history(db: Session = Depends(get_db), current_user: models.User
     return {"deleted": deleted}
 
 
+@app.get("/api/export")
+async def export_csv(db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    from fastapi.responses import StreamingResponse
+    import csv
+    import io
+    
+    task_store = crud.TaskStore(db)
+    
+    # Fetch Data
+    if current_user.is_admin == "True":
+        data = task_store.get_all_tasks_admin(include_text=True) # Returns list of dicts with owner_name
+    else:
+        # Re-use manual fetch logic for clean dicts
+        tasks = db.query(models.TranscriptionTask).filter(
+            models.TranscriptionTask.owner_id == current_user.id
+        ).order_by(models.TranscriptionTask.created_at.desc()).all()
+        data = [task.to_dict(include_text=True) for task in tasks]
+        # Add basic own name
+        for d in data: d['owner_name'] = current_user.full_name or current_user.username
+
+    # CSV Generation
+    output = io.StringIO()
+    # Write BOM for Excel UTF-8 compatibility
+    output.write('\ufeff')
+    
+    # Define columns - result_text MUST be last
+    fieldnames = ['task_id', 'filename', 'status', 'created_at', 'completed_at', 'duration', 'owner_name', 'analysis_status', 'result_text']
+    
+    writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction='ignore', delimiter=';')
+    writer.writeheader()
+    
+    for row in data:
+        # Sanitize text to remove potential interfering characters if needed, but quotes usually handle it
+        # However, newlines in Excel cells within ";" CSVs can be tricky. Quoting handles it.
+        writer.writerow(row)
+        
+    output.seek(0)
+    
+    filename = f"transcriptions_export_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.txt"
+    
+    response = StreamingResponse(iter([output.getvalue()]), media_type="text/plain; charset=utf-8")
+    response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+    return response
+
 @app.delete("/api/task/{task_id}")
 async def delete_task(task_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
     task_store = crud.TaskStore(db)
@@ -599,6 +698,36 @@ async def delete_task(task_id: str, db: Session = Depends(get_db), current_user:
     if task_store.delete_task(task_id):
         return {"deleted": True}
     raise HTTPException(status_code=404, detail="Task not found")
+# Global Config Endpoints
+@app.get("/api/config/keywords")
+async def get_keywords(db: Session = Depends(get_db)):
+    task_store = crud.TaskStore(db)
+    kw_yellow = task_store.get_global_config("keywords")
+    kw_red = task_store.get_global_config("keywords_red")
+    kw_green = task_store.get_global_config("keywords_green")
+    
+    return {
+        "keywords": kw_yellow or "", 
+        "keywords_red": kw_red or "", 
+        "keywords_green": kw_green or ""
+    }
+
+@app.post("/api/admin/config/keywords")
+async def update_keywords(config: KeywordsUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    if current_user.is_admin != "True":
+        raise HTTPException(status_code=403, detail="Acesso exclusivo para administradores")
+        
+    task_store = crud.TaskStore(db)
+    
+    # Save each key if present
+    if config.keywords is not None:
+        task_store.update_global_config("keywords", config.keywords)
+    if config.keywords_red is not None:
+        task_store.update_global_config("keywords_red", config.keywords_red)
+    if config.keywords_green is not None:
+        task_store.update_global_config("keywords_green", config.keywords_green)
+        
+    return {"status": "updated"}
 
 # Error handling
 @app.exception_handler(Exception)

@@ -20,11 +20,14 @@ class TranscriptionTask(Base):
     progress = Column(Integer, default=0, nullable=False)
     processing_time = Column(Float, nullable=True)
     analysis_status = Column(String, default="Pendente de análise", nullable=True)
+    summary = Column(Text, nullable=True)
+    topics = Column(Text, nullable=True)
+    options = Column(Text, nullable=True)
     owner_id = Column(String, nullable=True) # ForeignKey to User.id (as string uuid)
 
-    def to_dict(self):
+    def to_dict(self, include_text=False):
         """Helper method to convert model to dictionary for API responses"""
-        return {
+        data = {
             "task_id": self.task_id,
             "status": self.status,
             "filename": self.filename,
@@ -35,9 +38,16 @@ class TranscriptionTask(Base):
             "language": self.language,
             "duration": self.duration,
             "processing_time": self.processing_time,
-            "analysis_status": self.analysis_status or "Pendente de análise"
-            # omitting result_text for list views usually, but can be added if needed
+            "processing_time": self.processing_time,
+            "processing_time": self.processing_time,
+            "analysis_status": self.analysis_status or "Pendente de análise",
+            "summary": self.summary,
+            "topics": self.topics,
+            "options": self.options
         }
+        if include_text:
+            data['result_text'] = self.result_text or ""
+        return data
 
 class User(Base):
     __tablename__ = "users"
@@ -49,6 +59,12 @@ class User(Base):
     email = Column(String, nullable=True)
     is_active = Column(String, default="False") # Boolean as string for simplicity in SQLite or use Boolean
     is_admin = Column(String, default="False")
-    transcription_limit = Column(Integer, default=100)
+    transcription_limit = Column(Integer, default=30)
+
+class GlobalConfig(Base):
+    __tablename__ = "global_config"
+
+    key = Column(String, primary_key=True)
+    value = Column(Text, nullable=True)
 
 
