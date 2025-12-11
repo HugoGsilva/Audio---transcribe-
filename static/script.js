@@ -544,8 +544,24 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Apply Sort
+        // Apply Sort with status priority
+        // Priority: processing > queued > completed > failed
+        const statusPriority = {
+            'processing': 1,
+            'queued': 2,
+            'completed': 3,
+            'failed': 4
+        };
+
         filtered.sort((a, b) => {
+            // First, sort by status priority (processing and queued at top)
+            const aPriority = statusPriority[a.status] || 5;
+            const bPriority = statusPriority[b.status] || 5;
+            if (aPriority !== bPriority) {
+                return aPriority - bPriority;
+            }
+
+            // Then apply regular sort
             const field = window.sortState.field;
             let valA = a[field];
             let valB = b[field];
@@ -894,11 +910,16 @@ document.addEventListener('DOMContentLoaded', () => {
             // Toggle Views
             dashboardView.classList.add('hidden');
             let fullView = document.getElementById('full-transcription-view');
-            if (!fullView) {
-                // Create if not exists
-                fullView = document.createElement('div');
-                fullView.id = 'full-transcription-view';
-                fullView.innerHTML = `
+
+            // Always remove and recreate to ensure fresh content
+            if (fullView) {
+                fullView.remove();
+            }
+
+            // Create fresh view
+            fullView = document.createElement('div');
+            fullView.id = 'full-transcription-view';
+            fullView.innerHTML = `
                 <div class="header-bar">
                     <div style="display:flex; align-items:center; gap:16px;">
                         <button class="action-btn" onclick="closeFullView()" style="font-size:1.1rem; padding:8px 16px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px;">
@@ -965,19 +986,30 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 </div>
             `;
-                document.querySelector('.main-content').appendChild(fullView);
-            }
+            document.querySelector('.main-content').appendChild(fullView);
             fullView.classList.remove('hidden');
 
-            // Populate AI Data
-            const summaryDiv = document.getElementById('result-summary');
-            if (summaryDiv) summaryDiv.textContent = data.summary || "Resumo não disponível. A análise pode ter falhado ou o texto é muito curto.";
+            // DEBUG: Log API response
+            console.log('=== API Response Debug ===');
+            console.log('data.summary:', data.summary);
+            console.log('data.topics:', data.topics);
+            console.log('Full data:', data);
 
-            const topicsDiv = document.getElementById('result-topics');
+            // Populate AI Data - Use fullView.querySelector to target elements inside this specific view
+            const summaryDiv = fullView.querySelector('#result-summary');
+            console.log('summaryDiv found:', !!summaryDiv);
+            if (summaryDiv) {
+                summaryDiv.textContent = data.summary || "Resumo não disponível. A análise pode ter falhado ou o texto é muito curto.";
+                console.log('Summary set to:', summaryDiv.textContent.substring(0, 50));
+            }
+
+            const topicsDiv = fullView.querySelector('#result-topics');
+            console.log('topicsDiv found:', !!topicsDiv);
             if (topicsDiv) {
                 if (data.topics) {
                     const tags = data.topics.split(',').map(t => `<span class="ai-topic-tag">${escapeHtml(t.trim())}</span>`).join('');
                     topicsDiv.innerHTML = tags;
+                    console.log('Topics set to:', topicsDiv.innerHTML.substring(0, 100));
                 } else {
                     topicsDiv.textContent = "Tópicos não disponíveis.";
                 }
@@ -1284,15 +1316,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- UI Helpers ---
     window.switchResultTab = (tabName, btn) => {
+        console.log('=== switchResultTab called ===');
+        console.log('tabName:', tabName);
+        console.log('btn:', btn);
+
         const parent = btn.closest('.glass-card') || document;
+        console.log('parent found:', parent ? parent.className : 'document');
+
         // Buttons
         parent.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
         btn.classList.add('active');
 
         // Content
-        parent.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+        parent.querySelectorAll('.tab-content').forEach(el => {
+            console.log('Removing active from:', el.id);
+            el.classList.remove('active');
+        });
+
         const target = parent.querySelector(`#tab-content-${tabName}`);
-        if (target) target.classList.add('active');
+        console.log('target found:', target ? target.id : 'NOT FOUND');
+
+        if (target) {
+            target.classList.add('active');
+            console.log('Added active class to:', target.id);
+            console.log('Target content:', target.innerHTML.substring(0, 100));
+        }
     };
 
 });
