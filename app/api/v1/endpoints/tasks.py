@@ -47,10 +47,7 @@ async def upload_audio(
         if limit > 0 and usage >= limit:
              raise HTTPException(status_code=403, detail=f"Limite de transcrições atingido ({usage}/{limit}). Contate o admin.")
 
-    # Validate file
-    head = await file.read(2048)
-    await file.seek(0)
-    
+    # Validate file (validates extension, MIME type, and file size)
     try:
         safe_filename, file_size = await FileValidator.validate_file(file)
     except HTTPException as e:
@@ -161,12 +158,12 @@ async def get_status(task_id: str, db: Session = Depends(get_db), current_user: 
         "created_at": task.created_at,
     }
     
-    progress = 0
-    if task.status == "processing" and task.started_at:
-        elapsed = (datetime.utcnow() - task.started_at).total_seconds()
-        progress = min(90, int((elapsed / 30) * 100))
-    elif task.status == "completed":
+    # Use actual progress from database instead of fake time-based estimation
+    progress = task.progress if task.progress else 0
+    if task.status == "completed":
         progress = 100
+    elif task.status == "queued":
+        progress = 0
     
     response["progress"] = progress
     
@@ -209,15 +206,13 @@ async def download_result(task_id: str, db: Session = Depends(get_db), current_u
          raise HTTPException(status_code=403, detail="Não autorizado")
         
     filename = f"{os.path.splitext(task.filename)[0]}.txt"
-    temp_path = os.path.join(settings.UPLOAD_DIR, filename)
+    content = task.result_text or ""
     
-    with open(temp_path, "w", encoding="utf-8") as f:
-        f.write(task.result_text or "")
-        
-    return FileResponse(
-        path=temp_path, 
-        filename=filename, 
-        media_type="text/plain"
+    # Use StreamingResponse to avoid creating temp files that never get deleted
+    return StreamingResponse(
+        iter([content]),
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
 
 @router.get("/audio/{task_id}")

@@ -99,17 +99,18 @@ async def startup_event():
                 task.progress = 0
                 task.started_at = None
                 
-                # Re-add to memory queue
-                # We need to parse options from string if stored as logic, but model has JSON/Text?
-                # Simplification: we might lose options if not stored properly in composite or dict.
-                # models.py says: options = Column(Text)
-                # But we treat it as dict in code. SQLAlchemy doesn't auto-convert Text->Dict unless using TypeDecorator.
-                # Let's assume for now default options or try eval if safe (JSON should be used).
-                # Actually, the original code stored it as JSON/Text probably but raw.
-                # For safety, pass empty dict or try to load if really needed.
-                ops = {} 
+                # Parse options from JSON stored in database
+                import json
+                ops = {}
+                if task.options:
+                    try:
+                        ops = json.loads(task.options)
+                    except json.JSONDecodeError:
+                        logger.warning(f"Invalid options JSON for task {task.task_id}, using defaults")
+                        ops = {}
+                
                 # Re-queue
-                logger.info(f"Recovering task {task.task_id}...")
+                logger.info(f"Recovering task {task.task_id} with options: {ops}")
                 await task_queue.put((task.task_id, task.file_path, ops))
                 recovered_count += 1
             else:

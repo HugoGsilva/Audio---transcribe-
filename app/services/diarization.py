@@ -48,7 +48,10 @@ class DiarizationService:
                 if labels and len(labels) == expected_len:
                     logger.info("Loaded diarization from cache.")
                     return labels
-        except: pass
+        except (IOError, pickle.UnpicklingError, EOFError, KeyError) as e:
+            logger.debug(f"Cache load failed for {path}: {e}")
+        except Exception as e:
+            logger.warning(f"Unexpected cache error: {e}")
         return None
 
     def _compute_diarization(self, audio_path, segments, cache_path):
