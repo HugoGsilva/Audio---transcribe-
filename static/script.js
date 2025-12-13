@@ -48,6 +48,10 @@ document.addEventListener('DOMContentLoaded', () => {
             setTimeout(() => toast.remove(), 500);
         }, 3000);
     }
+    // Expose utilities globally for external scripts (e.g. rules-manager.js)
+    window.authFetch = authFetch;
+    window.showToast = showToast;
+    window.escapeHtml = escapeHtml;
 
     // DOM Elements - Navigation & Views
     const logoutBtn = document.getElementById('logout-btn');
@@ -102,32 +106,305 @@ document.addEventListener('DOMContentLoaded', () => {
     const uploadBtn = document.querySelector('.btn-upload-trigger');
     const statusSection = document.getElementById('status-section');
     const inprogressList = document.getElementById('inprogress-list');
-    const historyBody = document.getElementById('history-body');
+    let historyBody = document.getElementById('history-body');
     const emptyState = document.getElementById('empty-state');
     const btnClearHistory = document.getElementById('btn-clear-history');
     const usageDisplay = document.getElementById('usage-display');
 
-    // DOM Elements - Result Modal
-    const resultModal = document.getElementById('result-modal');
-    const resultText = document.getElementById('result-text');
-    const resultMeta = document.getElementById('result-meta');
-    const btnCloseModal = document.getElementById('btn-close-modal');
-    const btnDownload = document.getElementById('btn-download-text');
-    const btnDownloadAudio = document.getElementById('btn-download-audio');
-    const btnCopyText = document.getElementById('btn-copy-text');
+    // --- WaveSurfer & Search State ---
+    let wavesurfer = null;
 
-    // DOM Elements - Audio Player
-    const audioPlayerContainer = document.getElementById('audio-player');
-    const audioEl = document.getElementById('audio-element');
-    const playBtn = document.getElementById('play-pause-btn');
-    const playIcon = document.getElementById('play-icon');
+    window.viewResult = async (id) => {
+        const modal = document.getElementById('result-modal');
+        const textDiv = document.getElementById('result-text');
+        const summaryDiv = document.getElementById('result-summary');
+        const topicsDiv = document.getElementById('result-topics');
+        const metaDiv = document.getElementById('result-meta');
+        const audioContainer = document.getElementById('audio-player');
 
-    const currentTimeEl = document.getElementById('current-time');
-    const durationEl = document.getElementById('duration-display');
-    const seekContainer = document.getElementById('seek-container');
-    const seekFill = document.getElementById('seek-fill');
-    const volumeSlider = document.getElementById('volume-slider');
-    const volumeIcon = document.getElementById('volume-icon');
+        modal.classList.add('active');
+        textDiv.innerHTML = '<span class="loading-pulse">Carregando transcrição...</span>';
+        summaryDiv.innerHTML = '...';
+        topicsDiv.innerHTML = '...';
+        metaDiv.textContent = '';
+        audioContainer.classList.add('hidden');
+
+        try {
+            // 1. Get Text/Analysis
+            const res = await authFetch(`/api/result/${id}`);
+            if (!res.ok) throw new Error('Erro ao carregar');
+            const data = await res.json();
+            window.currentTaskId = id; // For download context
+
+            // Render Text (smart sync)
+            const safeText = escapeHtml(data.text || '');
+            const lines = safeText.split('\n');
+            let htmlContent = '';
+
+            lines.forEach(line => {
+                const match = line.match(/^\[(\d{2}):(\d{2})\]/); // Regex [MM:SS]
+                let sec = 0;
+                if (match) {
+                    sec = parseInt(match[1]) * 60 + parseInt(match[2]);
+                }
+                // Mark lines with data-time even if 0
+                htmlContent += `<p class="transcript-line" data-time="${sec}">${line}</p>`;
+            });
+            textDiv.innerHTML = htmlContent;
+
+            summaryDiv.textContent = data.summary || 'Não disponível';
+            topicsDiv.textContent = data.topics || 'Não disponível';
+
+            metaDiv.innerHTML = `
+                <strong>Arquivo:</strong> ${escapeHtml(data.filename)} &bull; 
+                <strong>Duração:</strong> ${formatDuration(data.duration)} &bull; 
+                <strong>Processado em:</strong> ${data.processing_time ? data.processing_time.toFixed(1) + 's' : '-'}`;
+
+            // 2. Setup Audio (WaveSurfer) safely
+            try {
+                const audioRes = await authFetch(`/api/audio/${id}`);
+                if (audioRes.ok) {
+                    const blob = await audioRes.blob();
+                    const audioUrl = window.URL.createObjectURL(blob);
+
+                    audioContainer.classList.remove('hidden');
+
+                    if (typeof WaveSurfer !== 'undefined') {
+                        initWaveSurfer(audioUrl);
+                    } else {
+                        console.warn("WaveSurfer lib not loaded. Fallback or simplified player could be used.");
+                        // Fallback: simple audio element could be injected here if needed,
+                        // but for now just show a warning in the container
+                        audioContainer.innerHTML = '<p style="color:var(--text-muted); font-size:0.8rem; padding:10px;">Visualização de áudio indisponível (Biblioteca não carregada).</p>';
+                    }
+                }
+            } catch (audioErr) {
+                console.error("Audio Load Error:", audioErr);
+                audioContainer.classList.add('hidden');
+            }
+
+        } catch (e) {
+            textDiv.textContent = 'Erro ao carregar detalhes da transcrição.';
+            console.error(e);
+        }
+    };
+
+    function initWaveSurfer(url) {
+        // Destroy previous instance
+        if (wavesurfer) {
+            try { wavesurfer.destroy(); } catch (e) { }
+            wavesurfer = null;
+        }
+
+        const container = document.getElementById('waveform');
+        container.innerHTML = ''; // Clear
+
+        try {
+            if (typeof WaveSurfer === 'undefined') throw new Error("WaveSurfer not loaded");
+
+            wavesurfer = WaveSurfer.create({
+                container: '#waveform',
+                waveColor: '#a5b4fc',
+                progressColor: '#6366f1',
+                cursorColor: '#4f46e5',
+                barWidth: 2,
+                barGap: 3,
+                height: 60,
+                responsive: true,
+                normalize: true,
+                cursorWidth: 1,
+            });
+
+            wavesurfer.load(url);
+
+            // Error handling for load
+            wavesurfer.on('error', (e) => {
+                console.error("WaveSurfer Load Error:", e);
+                container.innerHTML = '<p style="color:var(--danger); font-size:0.8rem;">Erro ao carregar renderização de áudio.</p>';
+            });
+
+        } catch (e) {
+            console.error("WaveSurfer Init Error:", e);
+            container.innerHTML = '<p style="color:var(--text-muted); font-size:0.8rem;">Visualização de ondas indisponível.</p>';
+            return;
+        }
+
+        // Bind Controls
+
+        // Bind Controls
+        const playBtn = document.getElementById('play-pause-btn');
+        const playIcon = document.getElementById('play-icon');
+        const timeEl = document.getElementById('current-time');
+        const durEl = document.getElementById('duration-display');
+        const volSlider = document.getElementById('volume-slider');
+
+        // Reset UI
+        playIcon.className = 'ph-fill ph-play';
+        timeEl.textContent = '0:00';
+
+        wavesurfer.on('ready', () => {
+            const d = wavesurfer.getDuration();
+            durEl.textContent = formatDuration(d);
+            wavesurfer.setVolume(volSlider.value);
+        });
+
+        wavesurfer.on('audioprocess', () => {
+            const t = wavesurfer.getCurrentTime();
+            timeEl.textContent = formatDuration(t);
+
+            // Sync Logic
+            const lines = document.querySelectorAll('.transcript-line');
+            let activeLine = null;
+
+            // Find the line that matches current time (closest previous timestamp)
+            for (let i = 0; i < lines.length; i++) {
+                const lTime = parseFloat(lines[i].dataset.time);
+                if (lTime <= t) {
+                    activeLine = lines[i];
+                } else {
+                    break; // Passed current time
+                }
+            }
+
+            if (activeLine) {
+                document.querySelectorAll('.transcript-line.active').forEach(e => e.classList.remove('active'));
+                activeLine.classList.add('active');
+                // Auto-scroll (smooth)
+                activeLine.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        });
+
+        wavesurfer.on('finish', () => {
+            playIcon.className = 'ph-fill ph-play';
+        });
+
+        playBtn.onclick = () => {
+            wavesurfer.playPause();
+            if (wavesurfer.isPlaying()) {
+                playIcon.className = 'ph-fill ph-pause';
+            } else {
+                playIcon.className = 'ph-fill ph-play';
+            }
+        };
+
+        volSlider.oninput = (e) => {
+            wavesurfer.setVolume(e.target.value);
+            const vIcon = document.getElementById('volume-icon');
+            if (e.target.value == 0) vIcon.className = 'ph ph-speaker-x';
+            else if (e.target.value < 0.5) vIcon.className = 'ph ph-speaker-low';
+            else vIcon.className = 'ph ph-speaker-high';
+        };
+    }
+
+    // --- Search Logic ---
+    const searchInput = document.getElementById('transcription-search');
+    if (searchInput) {
+        searchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                findNext();
+            }
+        });
+        searchInput.addEventListener('input', (e) => {
+            highlightText(e.target.value);
+        });
+    }
+
+    let searchIndices = [];
+    let currentSearchIdx = -1;
+
+    function highlightText(term) {
+        const textDiv = document.getElementById('result-text');
+        if (!textDiv) return;
+
+        // Restore original (we need to store it or just fetch from API again? 
+        // Storing in a data attribute is safer for performance than re-fetching)
+        if (!textDiv.dataset.original) {
+            textDiv.dataset.original = textDiv.innerHTML;
+        }
+
+        const original = textDiv.dataset.original;
+        if (!term || term.length < 2) {
+            textDiv.innerHTML = original;
+            searchIndices = [];
+            currentSearchIdx = -1;
+            return;
+        }
+
+        // Simple Regex Highlight
+        // Note: This breaks if searching for HTML tags, but good enough for plain text transcription
+        const regex = new RegExp(`(${term})`, 'gi');
+        // We can't apply strictly to innerHTML if it contains <br>, but we formatted with <br>. 
+        // A safer way is to use a tree walker or mark.js, but for now strict replace on safe text:
+
+        const newHtml = original.replace(regex, '<span class="highlight">$1</span>');
+        textDiv.innerHTML = newHtml;
+
+        // Find all highlights for navigation
+        searchIndices = document.querySelectorAll('.highlight');
+        currentSearchIdx = -1;
+
+        if (searchIndices.length > 0) {
+            scrollToHighlight(0);
+        }
+    }
+
+    function findNext() {
+        if (searchIndices.length === 0) return;
+        currentSearchIdx = (currentSearchIdx + 1) % searchIndices.length;
+        scrollToHighlight(currentSearchIdx);
+    }
+
+    function scrollToHighlight(idx) {
+        if (idx < 0 || idx >= searchIndices.length) return;
+        const el = searchIndices[idx];
+
+        // Remove active class from others
+        searchIndices.forEach(s => s.style.outline = 'none');
+        el.style.outline = '2px solid #ef4444'; // Red border for current
+
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        currentSearchIdx = idx;
+    }
+
+    // --- Shortcuts ---
+    document.addEventListener('keydown', (e) => {
+        const modal = document.getElementById('result-modal');
+        if (modal && modal.classList.contains('active')) {
+            // ESC -> Close
+            if (e.key === 'Escape') {
+                document.getElementById('btn-close-modal').click();
+            }
+            // Ctrl+S -> Download Text
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                document.getElementById('btn-download-text').click();
+                showToast('Iniciando download...', 'ph-download-simple');
+            }
+        }
+    });
+
+    // Close Modal Logic (legacy update)
+    const btnClose = document.getElementById('btn-close-modal');
+    if (btnClose) {
+        btnClose.onclick = () => {
+            const modal = document.getElementById('result-modal');
+            modal.classList.remove('active');
+            if (wavesurfer) {
+                wavesurfer.pause();
+            }
+        };
+    }
+
+    // Re-attach download buttons context
+    const btnDownText = document.getElementById('btn-download-text');
+    if (btnDownText) {
+        btnDownText.onclick = () => {
+            if (window.currentTaskId) window.downloadFile(window.currentTaskId);
+        };
+    }
+
+    // (Existing code continues...)
+
 
     // --- Interaction Logic ---
 
@@ -278,6 +555,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     let terminalInterval = null;
+    let terminalPaused = false;
+
     function startTerminalPoll() {
         if (terminalInterval) clearInterval(terminalInterval);
         loadLogs();
@@ -285,6 +564,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function loadLogs() {
+        if (terminalPaused) return; // Don't load if paused
+
         const tv = document.getElementById('terminal-view');
         if (!tv || tv.classList.contains('hidden')) {
             if (terminalInterval) clearInterval(terminalInterval);
@@ -295,11 +576,96 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             const out = document.getElementById('terminal-output');
             if (data.logs && out) {
-                out.textContent = data.logs.join('');
+                // Format logs with colors based on level
+                const formattedLogs = data.logs.map(line => {
+                    if (line.includes('ERROR') || line.includes('CRITICAL')) {
+                        return `<span class="log-error">${line}</span>`;
+                    } else if (line.includes('WARNING')) {
+                        return `<span class="log-warning">${line}</span>`;
+                    } else if (line.includes('INFO')) {
+                        return `<span class="log-info">${line}</span>`;
+                    } else if (line.includes('DEBUG')) {
+                        return `<span class="log-debug">${line}</span>`;
+                    } else if (line.includes('completed successfully') || line.includes('SUCCESS')) {
+                        return `<span class="log-success">${line}</span>`;
+                    }
+                    return line;
+                }).join('');
+
+                out.innerHTML = formattedLogs;
                 out.scrollTop = out.scrollHeight;
+
+                // Update line count
+                const lineCount = document.getElementById('terminal-line-count');
+                if (lineCount) {
+                    lineCount.textContent = data.logs.length;
+                }
+
+                // Update timestamp
+                const timestamp = document.getElementById('terminal-timestamp');
+                if (timestamp) {
+                    const now = new Date();
+                    timestamp.textContent = now.toLocaleTimeString('pt-BR');
+                }
+
+                // Update size
+                const sizeEl = document.getElementById('terminal-size');
+                if (sizeEl) {
+                    const sizeKB = (new Blob([data.logs.join('')]).size / 1024).toFixed(2);
+                    sizeEl.textContent = `${sizeKB} KB`;
+                }
             }
-        } catch (e) { }
+        } catch (e) {
+            console.error('Error loading logs:', e);
+        }
     }
+
+    // Terminal control functions
+    window.toggleTerminalPause = function () {
+        terminalPaused = !terminalPaused;
+        const btn = document.getElementById('terminal-pause-btn');
+        const icon = document.getElementById('terminal-pause-icon');
+        const text = document.getElementById('terminal-pause-text');
+
+        if (terminalPaused) {
+            icon.className = 'ph ph-play';
+            text.textContent = 'Continuar';
+            btn.style.borderColor = 'var(--success)';
+            btn.style.color = 'var(--success)';
+            showToast('Terminal pausado', 'ph-pause');
+        } else {
+            icon.className = 'ph ph-pause';
+            text.textContent = 'Pausar';
+            btn.style.borderColor = 'var(--border)';
+            btn.style.color = 'var(--text)';
+            loadLogs(); // Load immediately when resuming
+            showToast('Terminal retomado', 'ph-play');
+        }
+    };
+
+    window.copyTerminalLogs = function () {
+        const out = document.getElementById('terminal-output');
+        if (!out) return;
+
+        // Get text content without HTML tags
+        const text = out.innerText || out.textContent;
+
+        navigator.clipboard.writeText(text).then(() => {
+            showToast('Logs copiados!', 'ph-copy');
+        }).catch(err => {
+            console.error('Failed to copy:', err);
+            showToast('Erro ao copiar', 'ph-warning');
+        });
+    };
+
+    window.clearTerminalDisplay = function () {
+        const out = document.getElementById('terminal-output');
+        if (!out) return;
+
+        out.innerHTML = '<div style="display: flex; align-items: center; gap: 8px; color: rgba(16, 185, 129, 0.6);"><i class="ph ph-broom"></i><span>Display limpo. Aguardando novos logs...</span></div>';
+        showToast('Display limpo', 'ph-eraser');
+    };
+
 
     // Nav Events
     if (dashboardLink) dashboardLink.addEventListener('click', showDashboard);
@@ -438,6 +804,23 @@ document.addEventListener('DOMContentLoaded', () => {
         xhr.send(formData);
     }
 
+    function updateProgressOrder() {
+        const container = document.getElementById('inprogress-list');
+        const items = Array.from(container.children);
+
+        const score = (el) => {
+            const txt = el.querySelector('.progress-status')?.textContent?.toLowerCase() || '';
+            if (txt.includes('processando')) return 3;
+            if (txt.includes('fila') || txt.includes('iniciando') || txt.includes('enviando')) return 2;
+            if (txt.includes('aguardando')) return 1;
+            return 0; // Completed/Failed
+        };
+
+        items.sort((a, b) => score(b) - score(a));
+
+        items.forEach(item => container.appendChild(item));
+    }
+
     function pollStatus(taskId, item) {
         const bar = item.querySelector('.progress-bar-fill');
         let processedPercent = 0;
@@ -448,6 +831,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const data = await res.json();
                 const pct = data.progress || 0;
 
+                // Update text first
                 if (['processing', 'pending', 'queued'].includes(data.status)) {
                     bar.style.width = `${pct}%`;
                     if (data.status === 'queued') {
@@ -460,7 +844,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     bar.style.width = '100%';
                     if (item.addLog) {
                         item.addLog('Concluído!');
-                        item.addLog('Atualizando lista...');
                     }
                     showNativeNotification('Processamento Concluído', 'Sua transcrição está pronta.');
                     setTimeout(() => {
@@ -474,6 +857,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     bar.style.backgroundColor = 'var(--danger)';
                     if (item.addLog) item.addLog(`FALHA: ${data.error}`);
                 }
+
+                // Reorder list based on new status
+                updateProgressOrder();
+
             } catch (e) { console.error(e); }
         }, 1500);
     }
@@ -519,9 +906,9 @@ document.addEventListener('DOMContentLoaded', () => {
         historyBody.innerHTML = '';
 
         // Apply Filters
-        const fFile = document.getElementById('filter-file')?.value.toLowerCase();
-        const fDate = document.getElementById('filter-date')?.value;
-        const fStatus = document.getElementById('filter-status')?.value;
+        const fFile = (document.getElementById('filter-file')?.value || '').toLowerCase();
+        const fDate = document.getElementById('filter-date')?.value || '';
+        const fStatus = document.getElementById('filter-status')?.value || '';
 
         const filtered = allData.filter(task => {
             if (fFile && !task.filename.toLowerCase().includes(fFile)) return false;
@@ -533,7 +920,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Analysis status check
                     if (task.status !== 'completed') return false;
                     const analysis = task.analysis_status || 'Pendente de análise';
-                    if (analysis !== fStatus) return false;
+
+                    // Fix: Treat "Concluido" as "Pendente de análise" for legacy records
+                    // and strictly check others
+                    if (fStatus === 'Pendente de análise') {
+                        if (analysis !== 'Pendente de análise' && analysis !== 'Concluido') return false;
+                        // Avoid showing "Procedente" etc here
+                        if (['Procedente', 'Improcedente'].includes(analysis)) return false;
+                    }
+                    else if (analysis !== fStatus) {
+                        return false;
+                    }
                 }
             }
             return true;
@@ -645,12 +1042,34 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function loadHistory(showAll = false) {
-        if (!historyBody) return;
+        // Robuster Element Retrieval
+        const tbody = document.getElementById('history-body');
+        if (!tbody) {
+            console.error("Critical: history-body element not found in DOM!");
+            return;
+        }
+        console.log("DEBUG: loadHistory starting...", new Date().toISOString());
+
+        // Update global ref just in case
+        window.historyBody = tbody;
+        historyBody = tbody;
+
+        // Show loading state
+        if (!window.lastHistoryData) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:24px; color:var(--text-muted);"><i class="ph ph-spinner ph-spin" style="margin-bottom:8px; font-size:1.5rem;"></i><br>Carregando histórico...</td></tr>';
+        }
         showingAllHistory = showAll;
         try {
             const endpoint = showAll ? `/api/history?all=true&t=${Date.now()}` : `/api/history?t=${Date.now()}`;
             const res = await authFetch(endpoint);
+            if (!res.ok) {
+                console.error("API Error in loadHistory:", res.status);
+                tbody.innerHTML = '<tr><td colspan="7">Erro ao carregar: ' + res.status + '</td></tr>';
+                return;
+            }
             const data = await res.json();
+            console.log("DEBUG: Data received from API:", data ? data.length : "null");
+
             window.lastHistoryData = data;
 
             // Admin Toggle Button Logic
@@ -737,7 +1156,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             renderTable(data);
 
-        } catch (e) { console.error(e); }
+        } catch (e) {
+            console.error("ERROR in loadHistory:", e);
+        }
     }
 
     if (btnClearHistory) btnClearHistory.addEventListener('click', async () => {
@@ -816,50 +1237,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     }
 
-    if (playBtn && audioEl) {
-        playBtn.addEventListener('click', () => {
-            if (audioEl.paused) audioEl.play().catch(console.error);
-            else audioEl.pause();
-        });
-        audioEl.addEventListener('play', () => playIcon.classList.replace('ph-play', 'ph-pause'));
-        audioEl.addEventListener('pause', () => playIcon.classList.replace('ph-pause', 'ph-play'));
-        audioEl.addEventListener('timeupdate', () => {
-            const percent = (audioEl.currentTime / audioEl.duration) * 100;
-            seekFill.style.width = `${percent}%`;
-            currentTimeEl.textContent = formatTime(audioEl.currentTime);
-        });
-        audioEl.addEventListener('loadedmetadata', () => durationEl.textContent = formatTime(audioEl.duration));
-        audioEl.addEventListener('ended', () => {
-            playIcon.classList.replace('ph-pause', 'ph-play');
-            seekFill.style.width = '0%';
-        });
-    }
-    if (seekContainer && audioEl) {
-        seekContainer.addEventListener('click', (e) => {
-            const rect = seekContainer.getBoundingClientRect();
-            const percent = (e.clientX - rect.left) / rect.width;
-            audioEl.currentTime = percent * audioEl.duration;
-        });
-    }
-    if (volumeSlider && audioEl) {
-        volumeSlider.addEventListener('input', (e) => {
-            audioEl.volume = e.target.value;
-            const vol = audioEl.volume;
-            if (vol == 0) volumeIcon.className = 'ph ph-speaker-slash';
-            else if (vol < 0.5) volumeIcon.className = 'ph ph-speaker-low';
-            else volumeIcon.className = 'ph ph-speaker-high';
-        });
-        // Toggle Mute
-        volumeIcon.addEventListener('click', () => {
-            if (audioEl.volume > 0) {
-                audioEl.dataset.prev = audioEl.volume; audioEl.volume = 0; volumeSlider.value = 0;
-                volumeIcon.className = 'ph ph-speaker-slash';
-            } else {
-                audioEl.volume = audioEl.dataset.prev || 1; volumeSlider.value = audioEl.volume;
-                volumeIcon.className = 'ph ph-speaker-high';
-            }
-        });
-    }
+    // --- Clipboard ---
 
     window.copyToClipboard = (text) => {
         navigator.clipboard.writeText(text).then(() => showToast('ID copiado!', 'ph-check')).catch(() => prompt("Copiar ID:", text));
@@ -999,7 +1377,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const summaryDiv = fullView.querySelector('#result-summary');
             console.log('summaryDiv found:', !!summaryDiv);
             if (summaryDiv) {
-                summaryDiv.textContent = data.summary || "Resumo não disponível. A análise pode ter falhado ou o texto é muito curto.";
+                summaryDiv.textContent = data.summary || "Resumo não disponível. A análise pode ter falhado ou o texto à muito curto.";
                 console.log('Summary set to:', summaryDiv.textContent.substring(0, 50));
             }
 
@@ -1150,20 +1528,7 @@ document.addEventListener('DOMContentLoaded', () => {
         showDashboard();
     };
 
-    if (btnCloseModal) {
-        btnCloseModal.addEventListener('click', () => {
-            resultModal.style.display = 'none';
-            if (audioEl) { audioEl.pause(); audioEl.currentTime = 0; }
-        });
-    }
-    if (resultModal) {
-        resultModal.addEventListener('click', (e) => {
-            if (e.target === resultModal) {
-                resultModal.style.display = 'none';
-                if (audioEl) { audioEl.pause(); audioEl.currentTime = 0; }
-            }
-        });
-    }
+    /* Legacy Modal Logic Removed */
 
     // --- Reports & Admin ---
     async function loadReports() {
@@ -1203,35 +1568,51 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function loadAdminUsers() {
+        console.log('=== loadAdminUsers called ===');
         try {
             const res = await authFetch('/api/admin/users');
             const users = await res.json();
+            console.log('Users loaded:', users.length, 'users');
+
             const pList = document.getElementById('pending-users-list');
             const aList = document.getElementById('all-users-list');
+
+            if (!pList || !aList) {
+                console.error('Lists not found! pList:', pList, 'aList:', aList);
+                return;
+            }
+
             pList.innerHTML = ''; aList.innerHTML = '';
 
             users.forEach(u => {
-                const active = u.is_active === "True";
+                // Ô£à Corrigido: suporta tanto boolean quanto string
+                const active = u.is_active === true || u.is_active === "True";
+                const isAdmin = u.is_admin === true || u.is_admin === "True";
+                const isAdminUser = u.username === 'admin';
+
+                console.log(`User: ${u.username}, is_active: ${u.is_active} (type: ${typeof u.is_active}), active: ${active}`);
+
                 // All List
                 const row = document.createElement('div');
                 row.className = 'user-row';
                 row.style.cssText = 'padding:12px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center';
                 row.innerHTML = `
                     <div>
-                        <div style="font-weight:600">${escapeHtml(u.username)}</div>
+                        <div style="font-weight:600">${escapeHtml(u.username)}${isAdminUser ? ' <span style="color:var(--danger); font-size:0.7rem;">(ADMIN PRINCIPAL)</span>' : ''}</div>
                         <div style="font-size:0.8rem; color:var(--text-muted)">${escapeHtml(u.full_name)} • ${u.usage}/${u.transcription_limit || 100}</div>
                     </div>
                     <div style="display:flex; gap:8px; align-items:center;">
                         <span style="font-size:0.8rem; padding:2px 8px; border-radius:12px; background:${active ? 'var(--success)' : 'var(--warning)'}; color:white">${active ? 'Ativo' : 'Pendente'}</span>
-                        <button class="action-btn" onclick="toggleAdmin('${u.id}', ${u.is_admin === 'True'})"><i class="ph ${u.is_admin === 'True' ? 'ph-shield-slash' : 'ph-shield-check'}"></i></button>
+                        ${!isAdminUser ? `<button class="action-btn" onclick="toggleAdmin('${u.id}', ${isAdmin})"><i class="ph ${isAdmin ? 'ph-shield-slash' : 'ph-shield-check'}"></i></button>` : ''}
                         <button class="action-btn" onclick="changeLimit('${u.id}', ${u.transcription_limit || 100})"><i class="ph ph-faders"></i></button>
-                        <button class="action-btn delete" onclick="deleteUser('${u.id}')"><i class="ph ph-trash"></i></button>
+                        ${!isAdminUser ? `<button class="action-btn delete" onclick="deleteUser('${u.id}')"><i class="ph ph-trash"></i></button>` : '<span style="color:var(--text-muted); font-size:0.7rem;">Protegido</span>'}
                     </div>
                 `;
                 aList.appendChild(row);
 
                 // Pending List
                 if (!active) {
+                    console.log(`Adding ${u.username} to pending list`);
                     const pRow = document.createElement('div');
                     pRow.style.cssText = 'padding:12px; border:1px solid var(--border); margin-bottom:8px; display:flex; justify-content:space-between; background:var(--bg-card); border-radius:8px';
                     pRow.innerHTML = `
@@ -1242,15 +1623,44 @@ document.addEventListener('DOMContentLoaded', () => {
                         </div>
                 `;
                     pList.appendChild(pRow);
+                } else {
+                    console.log(`${u.username} is active, NOT adding to pending list`);
                 }
             });
-            if (pList.children.length === 0) pList.innerHTML = '<span style="color:var(--text-muted)">Nenhum pendente.</span>';
-        } catch (e) { console.error(e); }
+
+            console.log('Pending users count:', pList.children.length);
+            if (pList.children.length === 0) {
+                pList.innerHTML = '<span style="color:var(--text-muted)">Nenhum pendente.</span>';
+                console.log('No pending users, showing empty message');
+            }
+        } catch (e) {
+            console.error('Error in loadAdminUsers:', e);
+        }
     }
 
     // Admin Actions (Window)
     window.approveUser = async (id) => {
-        try { await authFetch(`/api/admin/approve/${id}`, { method: 'POST' }); loadAdminUsers(); } catch (e) { alert('Erro'); }
+        console.log('approveUser called with id:', id);
+        try {
+            console.log('Sending POST to /api/admin/approve/' + id);
+            const res = await authFetch(`/api/admin/approve/${id}`, { method: 'POST' });
+            console.log('Response status:', res.status);
+
+            if (!res.ok) {
+                const errorData = await res.json();
+                console.error('Error response:', errorData);
+                alert('Erro ao aprovar: ' + (errorData.detail || 'Erro desconhecido'));
+                return;
+            }
+
+            const data = await res.json();
+            console.log('Success response:', data);
+            showToast('Usuário aprovado com sucesso!', 'ph-check');
+            loadAdminUsers();
+        } catch (e) {
+            console.error('Exception in approveUser:', e);
+            alert('Erro ao aprovar usuário: ' + e.message);
+        }
     };
     window.deleteUser = async (id) => {
         if (!confirm('Excluir usuário?')) return;
@@ -1264,7 +1674,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const n = prompt('Novo limite (0 para ilimitado):', current);
         if (n === null) return; // Cancelled
         const val = parseInt(n);
-        if (isNaN(val) || val < 0) return alert('Número inválido');
+        if (isNaN(val) || val < 0) return alert('Numero inválido');
 
         try {
             await authFetch(`/api/admin/user/${id}/limit`, { method: 'POST', body: JSON.stringify({ limit: val }) });
@@ -1279,7 +1689,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             if (usageDisplay) {
                 if (data.limit === 0 || data.is_admin === "True") {
-                    usageDisplay.textContent = `${data.usage} / ∞`;
+                    usageDisplay.textContent = `${data.usage} / Ôê×`;
                     usageDisplay.style.color = 'var(--success)';
                 } else {
                     usageDisplay.textContent = `${data.usage} / ${data.limit}`;
@@ -1292,8 +1702,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initial Load
     Notification.requestPermission();
-    loadHistory();
-    loadUserInfo();
+
+    // Validate auth before loading data
+    if (token) {
+        setTimeout(() => {
+            loadUserInfo();
+            showDashboard();
+        }, 300); // 300ms delay to ensure DOM and styles are ready
+    }
     window.deleteTask = async (e, id) => {
         if (e) e.stopPropagation();
         if (!confirm('Excluir esta transcrição?')) return;
@@ -1344,3 +1760,4 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
 });
+

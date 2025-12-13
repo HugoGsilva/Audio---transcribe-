@@ -1,3 +1,4 @@
+
 fastapi
 uvicorn[standard]
 python-multipart
@@ -21,7 +22,11 @@ scikit-learn
 numpy
 requests
 # Audio Enhancement
-noisereduce
-pydub
+# (noisereduce & pydub removed for performance optimization)
 # AI Analysis
 sumy
+# Security & Performance
+slowapi
+# Tier 2 Infrastructure
+psycopg2-binary
+redis
