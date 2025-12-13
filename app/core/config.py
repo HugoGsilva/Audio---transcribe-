@@ -73,11 +73,19 @@ class Settings:
         if not self.ALLOWED_EXTENSIONS:
             raise ValueError("ALLOWED_EXTENSIONS cannot be empty")
         
-        # WEAK CHECK for now to allow dev without strict env, but warn
+        # SECRET_KEY is REQUIRED for security
         if not self.SECRET_KEY:
-            logger.warning("SECRET_KEY not set! Session security is compromised.")
+            raise ValueError(
+                "SECRET_KEY is required! Generate with: python -c \"import secrets; print(secrets.token_hex(32))\""
+            )
         
-        logger.info("Configuration loaded.")
+        if len(self.SECRET_KEY) < 32:
+            raise ValueError(
+                f"SECRET_KEY must be at least 32 characters (current: {len(self.SECRET_KEY)}). "
+                "Generate with: python -c \"import secrets; print(secrets.token_hex(32))\""
+            )
+        
+        logger.info("Configuration loaded and validated.")
 
 settings = Settings()
 try:
