@@ -1688,8 +1688,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await authFetch('/api/user/info');
             const data = await res.json();
             if (usageDisplay) {
-                if (data.limit === 0 || data.is_admin === "True") {
-                    usageDisplay.textContent = `${data.usage} / Ôê×`;
+                if (data.limit === 0 || data.is_admin === "True" || data.is_admin === true) {
+                    usageDisplay.innerHTML = `${data.usage} / &infin;`;
                     usageDisplay.style.color = 'var(--success)';
                 } else {
                     usageDisplay.textContent = `${data.usage} / ${data.limit}`;

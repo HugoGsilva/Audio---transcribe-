@@ -16,8 +16,8 @@ services:
     container_name: careca-db
     restart: always
     environment:
-      - POSTGRES_USER=${DB_USER:?DB_USER is required}
-      - POSTGRES_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required}
+      - POSTGRES_USER=${DB_USER:-careca}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:?DB_PASSWORD_required}
       - POSTGRES_DB=${DB_NAME:-carecadb}
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -60,9 +60,9 @@ services:
       - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME:-carecadb}
       - REDIS_URL=redis://redis:6379/0
       - CLEANUP_AFTER_HOURS=${CLEANUP_AFTER_HOURS:-24}
-      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY is required - generate with: python -c "import secrets; print(secrets.token_hex(32))"}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY_required}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:8000}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD_required}
     depends_on:
       - db
       - redis
