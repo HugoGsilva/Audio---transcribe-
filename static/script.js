@@ -551,6 +551,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     let terminalInterval = null;
+    let terminalPaused = false;
+
     function startTerminalPoll() {
         if (terminalInterval) clearInterval(terminalInterval);
         loadLogs();
@@ -558,6 +560,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function loadLogs() {
+        if (terminalPaused) return; // Don't load if paused
+
         const tv = document.getElementById('terminal-view');
         if (!tv || tv.classList.contains('hidden')) {
             if (terminalInterval) clearInterval(terminalInterval);
@@ -568,11 +572,96 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             const out = document.getElementById('terminal-output');
             if (data.logs && out) {
-                out.textContent = data.logs.join('');
+                // Format logs with colors based on level
+                const formattedLogs = data.logs.map(line => {
+                    if (line.includes('ERROR') || line.includes('CRITICAL')) {
+                        return `<span class="log-error">${line}</span>`;
+                    } else if (line.includes('WARNING')) {
+                        return `<span class="log-warning">${line}</span>`;
+                    } else if (line.includes('INFO')) {
+                        return `<span class="log-info">${line}</span>`;
+                    } else if (line.includes('DEBUG')) {
+                        return `<span class="log-debug">${line}</span>`;
+                    } else if (line.includes('completed successfully') || line.includes('SUCCESS')) {
+                        return `<span class="log-success">${line}</span>`;
+                    }
+                    return line;
+                }).join('');
+
+                out.innerHTML = formattedLogs;
                 out.scrollTop = out.scrollHeight;
+
+                // Update line count
+                const lineCount = document.getElementById('terminal-line-count');
+                if (lineCount) {
+                    lineCount.textContent = data.logs.length;
+                }
+
+                // Update timestamp
+                const timestamp = document.getElementById('terminal-timestamp');
+                if (timestamp) {
+                    const now = new Date();
+                    timestamp.textContent = now.toLocaleTimeString('pt-BR');
+                }
+
+                // Update size
+                const sizeEl = document.getElementById('terminal-size');
+                if (sizeEl) {
+                    const sizeKB = (new Blob([data.logs.join('')]).size / 1024).toFixed(2);
+                    sizeEl.textContent = `${sizeKB} KB`;
+                }
             }
-        } catch (e) { }
+        } catch (e) {
+            console.error('Error loading logs:', e);
+        }
     }
+
+    // Terminal control functions
+    window.toggleTerminalPause = function () {
+        terminalPaused = !terminalPaused;
+        const btn = document.getElementById('terminal-pause-btn');
+        const icon = document.getElementById('terminal-pause-icon');
+        const text = document.getElementById('terminal-pause-text');
+
+        if (terminalPaused) {
+            icon.className = 'ph ph-play';
+            text.textContent = 'Continuar';
+            btn.style.borderColor = 'var(--success)';
+            btn.style.color = 'var(--success)';
+            showToast('Terminal pausado', 'ph-pause');
+        } else {
+            icon.className = 'ph ph-pause';
+            text.textContent = 'Pausar';
+            btn.style.borderColor = 'var(--border)';
+            btn.style.color = 'var(--text)';
+            loadLogs(); // Load immediately when resuming
+            showToast('Terminal retomado', 'ph-play');
+        }
+    };
+
+    window.copyTerminalLogs = function () {
+        const out = document.getElementById('terminal-output');
+        if (!out) return;
+
+        // Get text content without HTML tags
+        const text = out.innerText || out.textContent;
+
+        navigator.clipboard.writeText(text).then(() => {
+            showToast('Logs copiados!', 'ph-copy');
+        }).catch(err => {
+            console.error('Failed to copy:', err);
+            showToast('Erro ao copiar', 'ph-warning');
+        });
+    };
+
+    window.clearTerminalDisplay = function () {
+        const out = document.getElementById('terminal-output');
+        if (!out) return;
+
+        out.innerHTML = '<div style="display: flex; align-items: center; gap: 8px; color: rgba(16, 185, 129, 0.6);"><i class="ph ph-broom"></i><span>Display limpo. Aguardando novos logs...</span></div>';
+        showToast('Display limpo', 'ph-eraser');
+    };
+
 
     // Nav Events
     if (dashboardLink) dashboardLink.addEventListener('click', showDashboard);
@@ -1475,35 +1564,51 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function loadAdminUsers() {
+        console.log('=== loadAdminUsers called ===');
         try {
             const res = await authFetch('/api/admin/users');
             const users = await res.json();
+            console.log('Users loaded:', users.length, 'users');
+
             const pList = document.getElementById('pending-users-list');
             const aList = document.getElementById('all-users-list');
+
+            if (!pList || !aList) {
+                console.error('Lists not found! pList:', pList, 'aList:', aList);
+                return;
+            }
+
             pList.innerHTML = ''; aList.innerHTML = '';
 
             users.forEach(u => {
-                const active = u.is_active === "True";
+                // ✅ Corrigido: suporta tanto boolean quanto string
+                const active = u.is_active === true || u.is_active === "True";
+                const isAdmin = u.is_admin === true || u.is_admin === "True";
+                const isAdminUser = u.username === 'admin';
+
+                console.log(`User: ${u.username}, is_active: ${u.is_active} (type: ${typeof u.is_active}), active: ${active}`);
+
                 // All List
                 const row = document.createElement('div');
                 row.className = 'user-row';
                 row.style.cssText = 'padding:12px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center';
                 row.innerHTML = `
                     <div>
-                        <div style="font-weight:600">${escapeHtml(u.username)}</div>
+                        <div style="font-weight:600">${escapeHtml(u.username)}${isAdminUser ? ' <span style="color:var(--danger); font-size:0.7rem;">(ADMIN PRINCIPAL)</span>' : ''}</div>
                         <div style="font-size:0.8rem; color:var(--text-muted)">${escapeHtml(u.full_name)} • ${u.usage}/${u.transcription_limit || 100}</div>
                     </div>
                     <div style="display:flex; gap:8px; align-items:center;">
                         <span style="font-size:0.8rem; padding:2px 8px; border-radius:12px; background:${active ? 'var(--success)' : 'var(--warning)'}; color:white">${active ? 'Ativo' : 'Pendente'}</span>
-                        <button class="action-btn" onclick="toggleAdmin('${u.id}', ${u.is_admin === 'True'})"><i class="ph ${u.is_admin === 'True' ? 'ph-shield-slash' : 'ph-shield-check'}"></i></button>
+                        ${!isAdminUser ? `<button class="action-btn" onclick="toggleAdmin('${u.id}', ${isAdmin})"><i class="ph ${isAdmin ? 'ph-shield-slash' : 'ph-shield-check'}"></i></button>` : ''}
                         <button class="action-btn" onclick="changeLimit('${u.id}', ${u.transcription_limit || 100})"><i class="ph ph-faders"></i></button>
-                        <button class="action-btn delete" onclick="deleteUser('${u.id}')"><i class="ph ph-trash"></i></button>
+                        ${!isAdminUser ? `<button class="action-btn delete" onclick="deleteUser('${u.id}')"><i class="ph ph-trash"></i></button>` : '<span style="color:var(--text-muted); font-size:0.7rem;">Protegido</span>'}
                     </div>
                 `;
                 aList.appendChild(row);
 
                 // Pending List
                 if (!active) {
+                    console.log(`Adding ${u.username} to pending list`);
                     const pRow = document.createElement('div');
                     pRow.style.cssText = 'padding:12px; border:1px solid var(--border); margin-bottom:8px; display:flex; justify-content:space-between; background:var(--bg-card); border-radius:8px';
                     pRow.innerHTML = `
@@ -1514,15 +1619,44 @@ document.addEventListener('DOMContentLoaded', () => {
                         </div>
                 `;
                     pList.appendChild(pRow);
+                } else {
+                    console.log(`${u.username} is active, NOT adding to pending list`);
                 }
             });
-            if (pList.children.length === 0) pList.innerHTML = '<span style="color:var(--text-muted)">Nenhum pendente.</span>';
-        } catch (e) { console.error(e); }
+
+            console.log('Pending users count:', pList.children.length);
+            if (pList.children.length === 0) {
+                pList.innerHTML = '<span style="color:var(--text-muted)">Nenhum pendente.</span>';
+                console.log('No pending users, showing empty message');
+            }
+        } catch (e) {
+            console.error('Error in loadAdminUsers:', e);
+        }
     }
 
     // Admin Actions (Window)
     window.approveUser = async (id) => {
-        try { await authFetch(`/api/admin/approve/${id}`, { method: 'POST' }); loadAdminUsers(); } catch (e) { alert('Erro'); }
+        console.log('approveUser called with id:', id);
+        try {
+            console.log('Sending POST to /api/admin/approve/' + id);
+            const res = await authFetch(`/api/admin/approve/${id}`, { method: 'POST' });
+            console.log('Response status:', res.status);
+
+            if (!res.ok) {
+                const errorData = await res.json();
+                console.error('Error response:', errorData);
+                alert('Erro ao aprovar: ' + (errorData.detail || 'Erro desconhecido'));
+                return;
+            }
+
+            const data = await res.json();
+            console.log('Success response:', data);
+            showToast('Usuário aprovado com sucesso!', 'ph-check');
+            loadAdminUsers();
+        } catch (e) {
+            console.error('Exception in approveUser:', e);
+            alert('Erro ao aprovar usuário: ' + e.message);
+        }
     };
     window.deleteUser = async (id) => {
         if (!confirm('Excluir usuário?')) return;

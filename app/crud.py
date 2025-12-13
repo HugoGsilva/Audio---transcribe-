@@ -4,6 +4,8 @@ from datetime import datetime
 import uuid
 from typing import Optional, List
 import os
+from .config import logger  # ✅ Adicionado: importação do logger
+
 
 class TaskStore:
     def __init__(self, db: Session):
@@ -38,7 +40,7 @@ class TaskStore:
             self.db.commit()
             self.db.refresh(task)
         return task
-        return task
+
 
     def update_status(self, task_id: str, status: str, error_message: str = None):
         task = self.get_task(task_id)
@@ -182,7 +184,7 @@ class TaskStore:
             hashed_password=hashed_password, 
             full_name=full_name, 
             email=email,
-            is_active="False"
+            is_active=False  # ✅ Corrigido: boolean ao invés de string
         )
         self.db.add(user)
         self.db.commit()

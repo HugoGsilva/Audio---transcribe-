@@ -168,7 +168,6 @@ async def startup_event():
         )
         db.add(new_user)
         db.commit()
-        db.commit()
         logger.info("Created Admin user with empty password")
     
     # Auto-migration: Add 'options' column if not exists
@@ -352,11 +351,21 @@ async def get_all_users(db: Session = Depends(get_db), current_user: models.User
 
 @app.post("/api/admin/approve/{user_id}")
 async def approve_user(user_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
+    logger.info(f"Approve user called by {current_user.username} for user_id: {user_id}")
+    
     if not current_user.is_admin:
+        logger.warning(f"Non-admin user {current_user.username} tried to approve user")
         raise HTTPException(status_code=403, detail="Acesso exclusivo para administradores")
+    
     task_store = crud.TaskStore(db)
-    task_store.approve_user(user_id)
-    return {"message": "Usuário aprovado"}
+    user = task_store.approve_user(user_id)
+    
+    if not user:
+        logger.error(f"User {user_id} not found for approval")
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    
+    logger.info(f"User {user.username} (id: {user_id}) approved successfully. is_active={user.is_active}")
+    return {"message": "Usuário aprovado", "user_id": user_id, "username": user.username}
 
 @app.post("/api/admin/user/{user_id}/password")
 async def admin_change_password(user_id: str, payload: dict, db: Session = Depends(get_db), current_user: models.User = Depends(auth.get_current_user)):
@@ -366,7 +375,9 @@ async def admin_change_password(user_id: str, payload: dict, db: Session = Depen
     new_password = payload.get("password")
     if not new_password or len(new_password) < 4:
          raise HTTPException(status_code=400, detail="Senha muito curta")
-         
+    
+    # ✅ Corrigido: definir hashed antes de usar
+    hashed = auth.get_password_hash(new_password)
     task_store = crud.TaskStore(db)
     if task_store.update_user_password(user_id, hashed):
         return {"message": "Senha atualizada"}
@@ -787,14 +798,7 @@ async def export_csv(db: Session = Depends(get_db), current_user: models.User = 
     response = StreamingResponse(iter([output.getvalue()]), media_type="text/plain; charset=utf-8")
     response.headers["Content-Disposition"] = f"attachment; filename={filename}"
     return response
-        
-    output.seek(0)
-    
-    filename = f"transcricoes_relatorio_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
-    
-    response = StreamingResponse(iter([output.getvalue()]), media_type="text/csv; charset=utf-8")
-    response.headers["Content-Disposition"] = f"attachment; filename={filename}"
-    return response
+
 
 class NotesUpdate(BaseModel):
     notes: str
