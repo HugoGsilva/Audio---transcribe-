@@ -30,3 +30,4 @@ slowapi
 # Tier 2 Infrastructure
 psycopg2-binary
 redis
+alembic

@@ -1,5 +1,6 @@
 
 from logging.config import fileConfig
+import os
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
@@ -18,14 +19,13 @@ if config.config_file_name is not None:
 # add your model's MetaData object here
 # for 'autogenerate' support
 from app.models import Base
-from app.core.config import settings
+from app.database import DATABASE_URL
 
 target_metadata = Base.metadata
 
-# other values from the config, defined by the needs of env.py,
-# can be acquired:
-# my_important_option = config.get_main_option("my_important_option")
-# ... etc.
+def get_url():
+    """Get database URL from environment or default to SQLite"""
+    return DATABASE_URL
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
@@ -39,10 +39,7 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = settings.DATABASE_PATH
-    if not url.startswith("sqlite"):
-        url = f"sqlite:///{settings.DATABASE_PATH}"
-        
+    url = get_url()
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -63,10 +60,7 @@ def run_migrations_online() -> None:
     """
     # Override URL from settings
     configuration = config.get_section(config.config_ini_section)
-    url = settings.DATABASE_PATH
-    if not url.startswith("sqlite"):
-        url = f"sqlite:///{settings.DATABASE_PATH}"
-    configuration["sqlalchemy.url"] = url
+    configuration["sqlalchemy.url"] = get_url()
         
     connectable = engine_from_config(
         configuration,
@@ -87,3 +81,4 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
+
