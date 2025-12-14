@@ -25,6 +25,8 @@ requests
 # (noisereduce & pydub removed for performance optimization)
 # AI Analysis
 sumy
+# Spell Correction
+language-tool-python
 # Security & Performance
 slowapi
 # Tier 2 Infrastructure

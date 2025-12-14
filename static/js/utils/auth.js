@@ -13,6 +13,18 @@ export function isAuthenticated() {
     return !!sessionStorage.getItem('access_token');
 }
 
+export function isAdmin() {
+    return sessionStorage.getItem('is_admin') === 'true';
+}
+
+export function checkAuthRedirect() {
+    if (!isAuthenticated()) {
+        window.location.href = '/login';
+        return false;
+    }
+    return true;
+}
+
 export function storeTokens(data) {
     sessionStorage.setItem('access_token', data.access_token);
     if (data.refresh_token) {
@@ -82,3 +94,4 @@ export async function authFetch(url, options = {}) {
     }
     return response;
 }
+

@@ -114,6 +114,45 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- WaveSurfer & Search State ---
     let wavesurfer = null;
 
+    // Store text versions for toggling
+    let currentTextOriginal = '';
+    let currentTextCorrected = '';
+    let showingCorrected = true; // Default to corrected version
+
+    window.switchTextVersion = (version) => {
+        const textDiv = document.getElementById('result-text');
+        const tabOriginal = document.getElementById('tab-original');
+        const tabCorrected = document.getElementById('tab-corrected');
+
+        if (version === 'original') {
+            showingCorrected = false;
+            renderTranscriptionText(textDiv, currentTextOriginal);
+            if (tabOriginal) tabOriginal.classList.add('active');
+            if (tabCorrected) tabCorrected.classList.remove('active');
+        } else {
+            showingCorrected = true;
+            renderTranscriptionText(textDiv, currentTextCorrected || currentTextOriginal);
+            if (tabCorrected) tabCorrected.classList.add('active');
+            if (tabOriginal) tabOriginal.classList.remove('active');
+        }
+    };
+
+    function renderTranscriptionText(textDiv, text) {
+        const safeText = escapeHtml(text || '');
+        const lines = safeText.split('\n');
+        let htmlContent = '';
+
+        lines.forEach(line => {
+            const match = line.match(/^\[(\d{2}):(\d{2})\]/); // Regex [MM:SS]
+            let sec = 0;
+            if (match) {
+                sec = parseInt(match[1]) * 60 + parseInt(match[2]);
+            }
+            htmlContent += `<p class="transcript-line" data-time="${sec}">${line}</p>`;
+        });
+        textDiv.innerHTML = htmlContent;
+    }
+
     window.viewResult = async (id) => {
         const modal = document.getElementById('result-modal');
         const textDiv = document.getElementById('result-text');
@@ -121,6 +160,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const topicsDiv = document.getElementById('result-topics');
         const metaDiv = document.getElementById('result-meta');
         const audioContainer = document.getElementById('audio-player');
+        const textTabs = document.getElementById('text-version-tabs');
 
         modal.classList.add('active');
         textDiv.innerHTML = '<span class="loading-pulse">Carregando transcrição...</span>';
@@ -136,21 +176,29 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             window.currentTaskId = id; // For download context
 
-            // Render Text (smart sync)
-            const safeText = escapeHtml(data.text || '');
-            const lines = safeText.split('\n');
-            let htmlContent = '';
+            // Store both versions
+            currentTextOriginal = data.text || '';
+            currentTextCorrected = data.text_corrected || '';
 
-            lines.forEach(line => {
-                const match = line.match(/^\[(\d{2}):(\d{2})\]/); // Regex [MM:SS]
-                let sec = 0;
-                if (match) {
-                    sec = parseInt(match[1]) * 60 + parseInt(match[2]);
+            // Show tabs if corrected version exists
+            if (textTabs) {
+                if (currentTextCorrected && currentTextCorrected !== currentTextOriginal) {
+                    textTabs.classList.remove('hidden');
+                } else {
+                    textTabs.classList.add('hidden');
                 }
-                // Mark lines with data-time even if 0
-                htmlContent += `<p class="transcript-line" data-time="${sec}">${line}</p>`;
-            });
-            textDiv.innerHTML = htmlContent;
+            }
+
+            // Render (default to corrected if available)
+            const textToShow = currentTextCorrected || currentTextOriginal;
+            renderTranscriptionText(textDiv, textToShow);
+
+            // Set active tab
+            const tabCorrected = document.getElementById('tab-corrected');
+            const tabOriginal = document.getElementById('tab-original');
+            if (tabCorrected) tabCorrected.classList.add('active');
+            if (tabOriginal) tabOriginal.classList.remove('active');
+            showingCorrected = true;
 
             summaryDiv.textContent = data.summary || 'Não disponível';
             topicsDiv.textContent = data.topics || 'Não disponível';
@@ -173,8 +221,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         initWaveSurfer(audioUrl);
                     } else {
                         console.warn("WaveSurfer lib not loaded. Fallback or simplified player could be used.");
-                        // Fallback: simple audio element could be injected here if needed,
-                        // but for now just show a warning in the container
                         audioContainer.innerHTML = '<p style="color:var(--text-muted); font-size:0.8rem; padding:10px;">Visualização de áudio indisponível (Biblioteca não carregada).</p>';
                     }
                 }
@@ -454,10 +500,8 @@ document.addEventListener('DOMContentLoaded', () => {
         adminView.classList.remove('hidden');
 
         if (!document.getElementById('pending-users-list')) {
-            adminView.innerHTML = `
-                <div class="header-bar">
-                    <div class="page-title"><h1>Administração</h1><p>Gerenciamento de usuários</p></div>
-                </div>
+            const adminContent = document.getElementById('admin-content') || adminView;
+            adminContent.innerHTML = `
                 <div class="glass-card">
                     <h3>Usuários Pendentes</h3><div id="pending-users-list" style="margin-top:16px;">Carregando...</div>
                     <h3 style="margin-top:32px;">Todos os Usuários</h3><div id="all-users-list" style="margin-top:16px;">Carregando...</div>
@@ -1372,6 +1416,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
 
                     <div id="tab-content-text" class="tab-content active">
+                        <div id="text-version-tabs" class="hidden" style="display: flex; gap: 8px; margin-bottom: 12px; padding: 8px; background: var(--bg); border-radius: 8px;">
+                            <button id="tab-corrected" class="tab-btn active" onclick="switchTextVersion('corrected')" style="font-size: 0.85rem; padding: 6px 12px;">
+                                <i class="fa-solid fa-spell-check"></i> Corrigido
+                            </button>
+                            <button id="tab-original" class="tab-btn" onclick="switchTextVersion('original')" style="font-size: 0.85rem; padding: 6px 12px;">
+                                <i class="fa-solid fa-file-lines"></i> Original
+                            </button>
+                        </div>
                         <div id="full-content" class="chat-container"></div>
                     </div>
                     <div id="tab-content-summary" class="tab-content">
@@ -1458,7 +1510,25 @@ document.addEventListener('DOMContentLoaded', () => {
             const contentDiv = document.getElementById('full-content');
             contentDiv.innerHTML = '';
 
-            const lines = (data.text || '').split('\\n');
+            // Store both versions for toggling
+            window.currentTextOriginal = data.text || '';
+            window.currentTextCorrected = data.text_corrected || '';
+
+            // Show version tabs if corrected text exists
+            const versionTabs = fullView.querySelector('#text-version-tabs');
+            if (versionTabs) {
+                if (window.currentTextCorrected && window.currentTextCorrected !== window.currentTextOriginal) {
+                    versionTabs.classList.remove('hidden');
+                    versionTabs.style.display = 'flex';
+                } else {
+                    versionTabs.classList.add('hidden');
+                    versionTabs.style.display = 'none';
+                }
+            }
+
+            // Use corrected text if available, otherwise original
+            const textToUse = window.currentTextCorrected || window.currentTextOriginal;
+            const lines = (textToUse || '').split('\\n');
 
             // Helper to highlight
             function highlightText(text) {
@@ -1502,7 +1572,45 @@ document.addEventListener('DOMContentLoaded', () => {
                 }).join('');
             }
 
-            if (!data.text) {
+            // Store highlight function globally for switchTextVersion
+            window.renderFullViewContent = function (textString) {
+                const cd = document.getElementById('full-content');
+                if (!cd) return;
+                cd.innerHTML = '';
+                const ls = (textString || '').split('\\n');
+
+                if (!textString) {
+                    cd.innerHTML = '<div style="padding:40px; text-align:center; color:var(--text-muted)">Sem texto disponível</div>';
+                    return;
+                }
+
+                ls.forEach(line => {
+                    const match = line.match(/^\[(\d{2}:\d{2})\]\s*(?:\[(.*?)\]:\s*)?(.*)/);
+                    if (match) {
+                        const time = match[1];
+                        const speaker = match[2] || '?';
+                        const text = match[3];
+
+                        const msg = document.createElement('div');
+                        let side = 'left';
+                        if (speaker.toLowerCase().includes('pessoa 2') || speaker.toLowerCase().includes('cliente')) side = 'right';
+
+                        msg.className = `chat-msg ${side}`;
+                        msg.innerHTML = `
+                    <div class="chat-bubble">${highlightText(text)}</div>
+                        <div class="chat-info">${time} • ${escapeHtml(speaker)}</div>
+                `;
+                        cd.appendChild(msg);
+                    } else if (line.trim()) {
+                        const msg = document.createElement('div');
+                        msg.className = 'chat-msg left';
+                        msg.innerHTML = `<div class="chat-bubble">${highlightText(line)}</div>`;
+                        cd.appendChild(msg);
+                    }
+                });
+            };
+
+            if (!textToUse) {
                 contentDiv.innerHTML = '<div style="padding:40px; text-align:center; color:var(--text-muted)">Sem texto disponível</div>';
             } else {
                 lines.forEach(line => {
@@ -1544,6 +1652,26 @@ document.addEventListener('DOMContentLoaded', () => {
         if (window.currentAudio) { window.currentAudio.pause(); }
         // Return to dashboard
         showDashboard();
+    };
+
+    // Toggle between original and corrected text versions
+    window.switchTextVersion = (version) => {
+        const tabOriginal = document.getElementById('tab-original');
+        const tabCorrected = document.getElementById('tab-corrected');
+
+        if (version === 'original') {
+            if (window.renderFullViewContent) {
+                window.renderFullViewContent(window.currentTextOriginal || '');
+            }
+            if (tabOriginal) tabOriginal.classList.add('active');
+            if (tabCorrected) tabCorrected.classList.remove('active');
+        } else {
+            if (window.renderFullViewContent) {
+                window.renderFullViewContent(window.currentTextCorrected || window.currentTextOriginal || '');
+            }
+            if (tabCorrected) tabCorrected.classList.add('active');
+            if (tabOriginal) tabOriginal.classList.remove('active');
+        }
     };
 
     /* Legacy Modal Logic Removed */

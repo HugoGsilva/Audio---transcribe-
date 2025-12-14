@@ -185,6 +185,7 @@ async def get_result(task_id: str, db: Session = Depends(get_db), current_user: 
     return {
         "task_id": task.task_id,
         "text": task.result_text,
+        "text_corrected": task.result_text_corrected,  # Spell-corrected version
         "language": task.language,
         "duration": task.duration,
         "processing_time": task.processing_time,
