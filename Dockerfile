@@ -33,11 +33,12 @@ RUN groupadd --gid 1000 appgroup \
 
 WORKDIR /app
 
-# Install runtime dependencies only (no build tools)
+# Install runtime dependencies (including Java for LanguageTool)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libmagic1 \
     curl \
+    default-jre-headless \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean \
     && rm -rf /tmp/* /var/tmp/*

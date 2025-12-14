@@ -12,6 +12,11 @@ __pycache__/
 .pytest_cache/
 test_output.txt
 
+# Environment (NEVER commit .env with secrets!)
+.env
+.env.local
+.env.*.local
+
 # Project specific
 uploads/
 !uploads/.gitkeep

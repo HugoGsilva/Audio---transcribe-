@@ -16,6 +16,7 @@ class TranscriptionTask(Base):
     completed_at = Column(DateTime, nullable=True)
     error_message = Column(Text, nullable=True)
     result_text = Column(Text, nullable=True)
+    result_text_corrected = Column(Text, nullable=True)  # Spell-corrected version
     language = Column(String, nullable=True)
     duration = Column(Float, nullable=True)
     progress = Column(Integer, default=0, nullable=False)
@@ -57,6 +58,7 @@ class TranscriptionTask(Base):
         }
         if include_text:
             data['result_text'] = self.result_text or ""
+            data['result_text_corrected'] = self.result_text_corrected or ""
         return data
 
 class User(Base):

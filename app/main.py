@@ -15,7 +15,7 @@ import uuid
 from app.core.config import settings, logger
 from app.core.limiter import limiter
 from app.core.queue import task_queue
-from app.core.worker import task_consumer
+
 
 # Import Database
 from app.database import engine, get_db
@@ -30,7 +30,7 @@ from app.api.v1.api import router as api_router
 # Create DB Tables (Pending Alembic)
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Careca.ai - Transcription Service")
+app = FastAPI(title="Mirror.ia - Sua voz, refletida em inteligência")
 
 # Limiter Setup
 app.state.limiter = limiter
@@ -41,8 +41,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
 )
 
 # Static & Templates
@@ -53,15 +53,20 @@ CACHE_BUST = str(int(time.time()))
 # Include API Router
 app.include_router(api_router)
 
+# Prometheus Instrumentator (Must be before startup)
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator
+    Instrumentator().instrument(app).expose(app)
+    logger.info("Prometheus metrics initialized")
+except ImportError:
+    logger.warning("Prometheus instrumentator not installed.")
+
+
 @app.on_event("startup")
 async def startup_event():
     logger.info("Service starting up [Applied Improvements]...")
     
-    # 1. Start Workers
-    for i in range(2):
-        asyncio.create_task(task_consumer())
-        logger.info(f"Started task_consumer worker {i+1}")
-        
+
     # 2. Infrastructure Setup (Admin & Migrations)
     db = next(get_db())
     try:
@@ -71,7 +76,8 @@ async def startup_event():
             pwd = settings.ADMIN_PASSWORD
             if not pwd:
                 pwd = secrets.token_urlsafe(16)
-                logger.warning(f"ADMIN_PASSWORD not set. Generated: {pwd}")
+                # Security: Do NOT log the generated password
+                logger.warning("ADMIN_PASSWORD not set. A temporary password was generated - set ADMIN_PASSWORD in .env")
             
             db.add(models.User(
                 username="admin", 
@@ -99,17 +105,18 @@ async def startup_event():
                 task.progress = 0
                 task.started_at = None
                 
-                # Re-add to memory queue
-                # We need to parse options from string if stored as logic, but model has JSON/Text?
-                # Simplification: we might lose options if not stored properly in composite or dict.
-                # models.py says: options = Column(Text)
-                # But we treat it as dict in code. SQLAlchemy doesn't auto-convert Text->Dict unless using TypeDecorator.
-                # Let's assume for now default options or try eval if safe (JSON should be used).
-                # Actually, the original code stored it as JSON/Text probably but raw.
-                # For safety, pass empty dict or try to load if really needed.
-                ops = {} 
+                # Parse options from JSON stored in database
+                import json
+                ops = {}
+                if task.options:
+                    try:
+                        ops = json.loads(task.options)
+                    except json.JSONDecodeError:
+                        logger.warning(f"Invalid options JSON for task {task.task_id}, using defaults")
+                        ops = {}
+                
                 # Re-queue
-                logger.info(f"Recovering task {task.task_id}...")
+                logger.info(f"Recovering task {task.task_id} with options: {ops}")
                 await task_queue.put((task.task_id, task.file_path, ops))
                 recovered_count += 1
             else:

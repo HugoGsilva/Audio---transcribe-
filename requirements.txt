@@ -25,8 +25,13 @@ requests
 # (noisereduce & pydub removed for performance optimization)
 # AI Analysis
 sumy
+# Spell Correction
+language-tool-python
 # Security & Performance
 slowapi
 # Tier 2 Infrastructure
 psycopg2-binary
 redis
+alembic
+rq
+prometheus-fastapi-instrumentator

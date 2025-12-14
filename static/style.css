@@ -120,7 +120,8 @@ body {
     justify-content: center;
 }
 
-.sidebar.collapsed .sidebar-toggle i {
+.sidebar.collapsed .sidebar-toggle i,
+.sidebar.collapsed .sidebar-toggle svg {
     transform: rotate(180deg);
 }
 
@@ -150,7 +151,8 @@ body {
     transform: scale(1.1);
 }
 
-.sidebar-toggle i {
+.sidebar-toggle i,
+.sidebar-toggle svg {
     font-size: 14px;
     transition: transform 0.3s ease;
 }
@@ -1497,4 +1499,21 @@ textarea.result-textarea {
     100% {
         background-position: 200% 0;
     }
+}
+
+/* Wave Animation for Dashboard Icon */
+@keyframes wave {
+
+    0%,
+    100% {
+        transform: scaleY(1);
+    }
+
+    50% {
+        transform: scaleY(0.5);
+    }
+}
+
+.wave-bar {
+    transform-origin: center;
 }
