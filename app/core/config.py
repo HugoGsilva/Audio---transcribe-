@@ -31,10 +31,18 @@ stream_handler.setFormatter(formatter)
 
 handlers = [stream_handler]
 
-# Only add file handler if directory is writable/exists
+# Use RotatingFileHandler to prevent disk space issues
 if os.path.exists(LOG_DIR):
     try:
-        file_handler = logging.FileHandler(LOG_FILE, mode='a', encoding='utf-8')
+        from logging.handlers import RotatingFileHandler
+        # Rotate at 10MB, keep 5 backup files
+        file_handler = RotatingFileHandler(
+            LOG_FILE, 
+            mode='a', 
+            maxBytes=10*1024*1024,  # 10MB
+            backupCount=5,
+            encoding='utf-8'
+        )
         file_handler.setFormatter(formatter)
         handlers.append(file_handler)
     except Exception as e:
